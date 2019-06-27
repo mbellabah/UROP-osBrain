@@ -17,24 +17,21 @@ MAIN_CHANNEL = 'main'
 class Node(Agent):
     def on_init(self):
         self.bind('PUB', alias=MAIN_CHANNEL)
+        self.bind('REP', alias=self.name, handler='reply_to_node')
 
         self.global_atom_y: Dict[int, np.array] = {}
         self.global_atom_nu_bar: Dict[int, np.array] = {}
         self.atom = None
         self.neighbors = list(set([1, 2, 3]) - {self.atom_id})     # list(self.atom._neighbors.keys()) FIXME: Technically, the latter
 
-        self.round_y = 1
-        self.round_nu_bar = 1
-        self.neighbors_round = {neighbor: (0, 0) for neighbor in self.neighbors}        # (round_y, round_nu_bar)
-
     def initial_broadcast_y(self):
         # assumes self.atom exists
-        data_package = {'round': (self.round_y, self.round_nu_bar), 'sender': self.atom_id, 'msg_type': 'y', 'payload': self.atom.get_y()}
+        data_package = {'sender': self.atom_id, 'msg_type': 'y', 'payload': self.atom.get_y()}
         for j in self.neighbors:
             self.broadcast(msg=data_package, recipient=f'Node-{j}')
 
     def initial_broadcast_nu_bar(self):
-        data_package = {'round': (self.round_y, self.round_nu_bar), 'sender': self.atom_id, 'msg_type': 'nu_bar', 'payload': self.atom.get_nu_bar()}
+        data_package = {'sender': self.atom_id, 'msg_type': 'nu_bar', 'payload': self.atom.get_nu_bar()}
         for j in self.neighbors:
             self.broadcast(msg=data_package, recipient=f'Node-{j}')
 
@@ -44,27 +41,26 @@ class Node(Agent):
     # MARK: Communications
     def broadcast(self, msg: Dict[str, Any], recipient) -> None:
         self.send(
-            MAIN_CHANNEL,
+            recipient,
             message=msg,
-            topic=recipient
         )
+
+    def reply_to_node(self, data_package: dict):
+        # sender: int = data_package['sender']
+        # msg_type = data_package['msg_type']
+        # payload: np.array = data_package['payload']
+        #
+        # self.set_values(msg_type, sender, payload)
+        print(self.name, data_package)
 
     def broadcast_all(self, msg: Dict[str, Any]) -> None:
         for node_id in self.neighbors:
             self.broadcast(msg=msg, recipient=f'Node-{node_id}')
 
-    def receive(self, data_package: dict):
+    def receive_setup(self, data_package: dict):
         if 'is_setup' in data_package:      # receives from coordinator; {'is_setup': bool, 'data': dict}
+            self.log_info('received setup info from coordinator')
             self.atom = Atom(atom_id=self.atom_id, node_data_package=data_package['data'])
-        else:
-            sender_round_y, sender_round_nu_bar = data_package['round']
-            sender: int = data_package['sender']
-            msg_type = data_package['msg_type']
-            payload: np.array = data_package['payload']
-
-            self.neighbors_round[sender] = (sender_round_y, sender_round_nu_bar)
-            self.log_info(f'Received: ({sender_round_y}, {sender_round_nu_bar}) from {sender}')
-            self.set_values(msg_type, sender, payload)
 
     def set_values(self, msg_type: str, sender: int, payload: dict):
         if msg_type == 'y':
@@ -75,7 +71,7 @@ class Node(Agent):
             self.atom.global_atom_nu_bar[sender] = payload
 
     def compose_package(self, msg_type) -> dict:
-        data_package = {'round': (self.round_y, self.round_nu_bar), 'sender': self.atom_id, 'msg_type': msg_type}
+        data_package = {'sender': self.atom_id, 'msg_type': msg_type}
         if msg_type == 'y':
             data_package['payload'] = self.atom.get_y()
         elif msg_type == 'nu_bar':
@@ -84,35 +80,7 @@ class Node(Agent):
         return data_package
 
     def run_pac(self):
-        if not self.is_synchronized(msg_type='y'):       # wait
-            self.log_info(f'waiting on y : {self.neighbors_round}')
-            pass
-        else:
-            self.atom.update_y_and_mu()
-            self.round_y += 1
-
-            self.broadcast_all(msg=self.compose_package('y'))
-
-        if not self.is_synchronized(msg_type='nu_bar'):
-            self.log_info(f'waiting on nu_bar : {self.neighbors_round}')
-            pass
-        else:
-            self.atom.update_nu()
-            self.round_nu_bar += 1
-
-            self.broadcast_all(msg=self.compose_package('nu_bar'))
-
-    def is_synchronized(self, msg_type: str) -> bool:
-        if msg_type == 'y':
-            for other_agent_round_y, _ in self.neighbors_round.values():
-                if self.round_y != other_agent_round_y:
-                    return False
-            return True
-        elif msg_type == 'nu_bar':
-            for _, other_agent_round_nu_bar in self.neighbors_round.values():
-                if self.round_nu_bar != other_agent_round_nu_bar:
-                    return False
-            return True
+        pass
 
 
 class Coordinator(Agent):
@@ -153,21 +121,30 @@ class Main:
     def setup_atoms(self) -> None:
         # Connect all atoms together, and the coordinator
         for node_id, node_agent_a in self.node_dict.items():
-            node_agent_a.connect(self.coordinator.addr(MAIN_CHANNEL), handler={node_id: 'receive'})
-            for node_agent_b in self.node_dict.values():
-                node_agent_a.connect(node_agent_b.addr(MAIN_CHANNEL), handler={node_id: 'receive'})
+            node_agent_a.connect(self.coordinator.addr(MAIN_CHANNEL), handler={node_id: 'receive_setup'})
+            for node_id_b, node_agent_b in self.node_dict.items():
+                addr = node_agent_b.addr(node_id_b)
+
+                if addr.kind == 'REP':
+                    node_agent_a.connect(node_agent_b.addr(node_id_b), alias=node_id_b)
+                else:
+                    break
 
         # Setup the environment via the coordinator
         self.coordinator.init_environment()
 
-        # Broadcast initial
-        for node in self.node_dict.values():
-            node.initial_broadcast_y()
-        for node in self.node_dict.values():
-            node.init_dual_vars()
-        for node in self.node_dict.values():
-            node.initial_broadcast_nu_bar()
+        self.node_dict[f'Node-1'].broadcast(msg='hello from Node-1', recipient='Node-2')
+        self.node_dict['Node-1'].recv('Node-2')
 
+        self.ns.shutdown()
+
+        # # Broadcast initial
+        # for node in self.node_dict.values():
+        #     node.initial_broadcast_y()
+        # for node in self.node_dict.values():
+        #     node.init_dual_vars()
+        # for node in self.node_dict.values():
+        #     node.initial_broadcast_nu_bar()
 
     def run_PAC(self, T):
 
