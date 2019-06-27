@@ -22,17 +22,19 @@ class Node(Agent):
         self.global_atom_nu_bar: Dict[int, np.array] = {}
         self.atom = None
         self.neighbors = list(set([1, 2, 3]) - {self.atom_id})     # list(self.atom._neighbors.keys()) FIXME: Technically, the latter
-        self.round = 1
-        self.neighbors_round = {neighbor: 0 for neighbor in self.neighbors}
+
+        self.round_y = 1
+        self.round_nu_bar = 1
+        self.neighbors_round = {neighbor: (0, 0) for neighbor in self.neighbors}        # (round_y, round_nu_bar)
 
     def initial_broadcast_y(self):
         # assumes self.atom exists
-        data_package = {'round': self.round, 'sender': self.atom_id, 'msg_type': 'y', 'payload': self.atom.get_y()}
+        data_package = {'round': (self.round_y, self.round_nu_bar), 'sender': self.atom_id, 'msg_type': 'y', 'payload': self.atom.get_y()}
         for j in self.neighbors:
             self.broadcast(msg=data_package, recipient=f'Node-{j}')
 
     def initial_broadcast_nu_bar(self):
-        data_package = {'round': self.round, 'sender': self.atom_id, 'msg_type': 'nu_bar', 'payload': self.atom.get_nu_bar()}
+        data_package = {'round': (self.round_y, self.round_nu_bar), 'sender': self.atom_id, 'msg_type': 'nu_bar', 'payload': self.atom.get_nu_bar()}
         for j in self.neighbors:
             self.broadcast(msg=data_package, recipient=f'Node-{j}')
 
@@ -55,17 +57,16 @@ class Node(Agent):
         if 'is_setup' in data_package:      # receives from coordinator; {'is_setup': bool, 'data': dict}
             self.atom = Atom(atom_id=self.atom_id, node_data_package=data_package['data'])
         else:
-            sender_round: int = data_package['round']
+            sender_round_y, sender_round_nu_bar = data_package['round']
             sender: int = data_package['sender']
             msg_type = data_package['msg_type']
             payload: np.array = data_package['payload']
 
-            self.neighbors_round[sender] = sender_round
-            # self.log_info(f'Received {msg_type} from Node-{sender}')
-
+            self.neighbors_round[sender] = (sender_round_y, sender_round_nu_bar)
+            self.log_info(f'Received: ({sender_round_y}, {sender_round_nu_bar}) from {sender}')
             self.set_values(msg_type, sender, payload)
 
-    def set_values(self, msg_type: str, sender: str, payload: dict):
+    def set_values(self, msg_type: str, sender: int, payload: dict):
         if msg_type == 'y':
             self.global_atom_y[sender] = payload
             self.atom.global_atom_y[sender] = payload
@@ -74,7 +75,7 @@ class Node(Agent):
             self.atom.global_atom_nu_bar[sender] = payload
 
     def compose_package(self, msg_type) -> dict:
-        data_package = {'round': self.round, 'sender': self.atom_id, 'msg_type': msg_type}
+        data_package = {'round': (self.round_y, self.round_nu_bar), 'sender': self.atom_id, 'msg_type': msg_type}
         if msg_type == 'y':
             data_package['payload'] = self.atom.get_y()
         elif msg_type == 'nu_bar':
@@ -82,28 +83,36 @@ class Node(Agent):
 
         return data_package
 
-    def run_PAC(self, _=None):
-        # if self.is_synchronized():       # wait
-        #     self.round += 1
-        #     self.atom.update_y_and_mu()
-        #     # self.log_info(f'Advancing, {self.global_atom_nu_bar}')
-        #     self.broadcast_all(msg=self.compose_package('y'))
-        self.atom.update_y_and_mu()
-        self.broadcast_all(msg=self.compose_package('y'))
-        time.sleep(0.2)
-        self.atom.update_nu()
-        self.broadcast_all(msg=self.compose_package('nu_bar'))
-        self.round += 1
-        self.log_info(f'Im now on round {self.round}')
+    def run_pac(self):
+        if not self.is_synchronized(msg_type='y'):       # wait
+            self.log_info(f'waiting on y : {self.neighbors_round}')
+            pass
+        else:
+            self.atom.update_y_and_mu()
+            self.round_y += 1
 
-    def periodic(self):
-        self.each(0.5, self.run_PAC)
+            self.broadcast_all(msg=self.compose_package('y'))
 
-    def is_synchronized(self) -> bool:
-        for other_agent_round in self.neighbors_round.values():
-            if self.round != other_agent_round:
-                return False
-        return True
+        if not self.is_synchronized(msg_type='nu_bar'):
+            self.log_info(f'waiting on nu_bar : {self.neighbors_round}')
+            pass
+        else:
+            self.atom.update_nu()
+            self.round_nu_bar += 1
+
+            self.broadcast_all(msg=self.compose_package('nu_bar'))
+
+    def is_synchronized(self, msg_type: str) -> bool:
+        if msg_type == 'y':
+            for other_agent_round_y, _ in self.neighbors_round.values():
+                if self.round_y != other_agent_round_y:
+                    return False
+            return True
+        elif msg_type == 'nu_bar':
+            for _, other_agent_round_nu_bar in self.neighbors_round.values():
+                if self.round_nu_bar != other_agent_round_nu_bar:
+                    return False
+            return True
 
 
 class Coordinator(Agent):
@@ -159,16 +168,23 @@ class Main:
         for node in self.node_dict.values():
             node.initial_broadcast_nu_bar()
 
+
     def run_PAC(self, T):
-        # for t in range(1, T+1):
-        #     print(f'Round: {t}/{T}')
-        for node in self.node_dict.values():
-            node.periodic()
 
-        time.sleep(T)
+        # # for t in range(1, T+1):
+        # #     print(f'Round: {t}/{T}')
+        # for node in self.node_dict.values():
+        #     node.periodic()
+        #
+        # time.sleep(T)
+        #
+        # for node in self.node_dict.values():
+        #     print(node.get_attr('atom')._y)
 
         for node in self.node_dict.values():
-            print(node.get_attr('atom')._y)
+            node.run_pac()
+
+        time.sleep(10)
 
         # Terminate
         self.ns.shutdown()
