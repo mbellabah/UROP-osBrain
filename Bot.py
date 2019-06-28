@@ -28,6 +28,10 @@ class Bot(Agent):
 
         self.neighbors: list = list({1, 2, 3} - {self.bot_id})      # FIXME: list(self.atom_neighbor.keys())
         self.neighbor_round: Dict[str, Tuple[int, int]] = {}
+        self.pending: int = 0
+
+        self.is_init_y: bool = False
+        self.is_init_nu_bar: bool = False
 
     # MARK: Communication
     def reply_to_request(self, request: dict) -> dict:      # When asked something, provide data on self
@@ -38,12 +42,19 @@ class Bot(Agent):
             request_data_type = request['data_type']
             return self.compose_data_package(data_type=request_data_type)
 
-    def process_reply(self, response: dict):     # After request, how to process that request
+    def process_reply(self, response: dict):     # After request, how to process the subsequent reply
         """
         :param response: {sender: str, data_type: str, round: tuple, payload: dict}
         """
-        self.log_info(f'Processing the reply from {response["sender"]}')
+        self.pending -= 1
         self.set_package_params(**response)
+
+        # If initializing the variables
+        if self.pending == 0 and self.is_init_y:
+            self.atom.init_dual_vars()
+            self.init_pac_nu_bar()
+            self.round_y += 1
+            self.is_init_y = False      # so as to not run again
 
     def send_request(self, request: dict, recipient: str):
         """
@@ -51,6 +62,7 @@ class Bot(Agent):
         :param recipient: str
         :return:
         """
+        self.pending += 1
         self.send(
             recipient,
             request
@@ -64,6 +76,7 @@ class Bot(Agent):
         for j in self.neighbors:
             bot_name: str = f'Bot-{j}'
             self.send_request(request=request, recipient=bot_name)
+            # all subsequent replies are handled by the process_reply handler
 
     def receive_setup(self, data_package: dict):
         if 'is_setup' in data_package:
@@ -75,26 +88,51 @@ class Bot(Agent):
         data_package = {
             'sender': self.name,
             'data_type': data_type,
-            'round': (self.round_y, self.round_nu_bar),
+            'bot_round': (self.round_y, self.round_nu_bar),
             'payload': self.atom.get_y() if data_type == 'y' else self.atom.get_nu_bar()
         }
         return data_package
 
-    def set_package_params(self, sender: str, data_type: str, round: tuple, payload: dict):
+    def set_package_params(self, sender: str, data_type: str, bot_round: tuple, payload: dict):
         sender_id: int = int(sender[4:])
-        self.neighbor_round[sender] = round
+        self.neighbor_round[sender] = bot_round
 
         if data_type == 'y':
             self.atom.global_atom_y[sender_id] = payload
         elif data_type == 'nu_bar':
             self.atom.global_atom_nu_bar[sender_id] = payload
 
-    def run_pac(self):
-        if self.round_y == 0 and self.round_nu_bar == 0:
-            # Initial round
+    def init_pac_y(self):
+        if not self.is_init_y:
+            self.request_all(data_type='y')     # self.pending = num of neighbors
+            self.is_init_y = True
 
-            self.round_y += 1
-            self.round_nu_bar += 1
+    def init_pac_nu_bar(self):
+        if not self.is_init_nu_bar:
+            self.request_all(data_type='nu_bar')
+            self.is_init_nu_bar = True
+
+    def run_pac(self):
+        # Perform the updates
+        if self.pending == 0:
+            if self.is_synchronized():
+                self.atom.update_y_and_mu()
+                self.round_y += 1
+                self.request_all(data_type='y')
+        else:
+            self.log_info('Waiting {}'.format(self.pending))
+            self.idle()
+
+        self.log_info('round {}, pending {}, and {}'.format(self.round_y, self.pending, self.atom.mu_bar))
+
+    def periodic_pac(self, delta_t: float = 2):
+        self.each(delta_t, 'run_pac')       # FIXME: May have to change the delta t here
+
+    def is_synchronized(self):
+        for round_y, round_nu_bar in self.neighbor_round.values():
+            if self.round_y != round_y:  # or self.round_nu_bar != round_nu_bar:
+                return False
+        return True
 
 
 class Coordinator(Agent):
@@ -143,14 +181,26 @@ class Main:
         # Setup the environment via the coordinator
         self.coordinator.init_environment()
 
-    def run(self):
+        # init pac
+        for bot in self.bot_dict.values():
+            bot.init_pac_y()
+
+    def run(self, runtime: int):
         self.setup_atoms()
 
-        bot_a = 'Bot-1'
-        bot_b = 'Bot-3'
+        # # Periodic...
+        for bot in self.bot_dict.values():
+            bot.periodic_pac()
+        t_end = time.time() + runtime
+        while time.time() < t_end:
+            pass
 
-        self.bot_dict[bot_a].send_request('Hello Bot-3!', recipient=bot_b)
-        self.bot_dict[bot_a].log_info('Waiting for Alice to reply')
+        # # Aperiodic...
+        # for bot in self.bot_dict.values():
+        #     bot.run_pac()
+        # time.sleep(runtime)
 
-        time.sleep(3)
+        for bot in self.bot_dict.values():
+            bot.log_info(bot.get_attr('atom').mu_bar)
+
         self.ns.shutdown()
