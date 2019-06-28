@@ -66,7 +66,7 @@ class Node(Agent):
         for node_id in self.neighbors:
             self.broadcast(msg=msg, recipient=f'Node-{node_id}')
             node_reply = self.recv(f'Node-{node_id}')
-            # self.log_info(f'node: {node_reply["sender"]} is on round: {node_reply["round"]}')
+            # self.log_info(f'received {node_reply["msg_type"]} from {node_reply["sender"]} ')
             self.set_values(**node_reply)
 
         # Synchrony achieved
@@ -75,6 +75,7 @@ class Node(Agent):
         elif msg['msg_type'] == 'nu_bar':
             self.atom.update_nu()
 
+        # self.log_info(self.atom.get_y())
         self.round += 1
 
     def receive_setup(self, data_package: dict):
@@ -110,7 +111,9 @@ class Node(Agent):
 
     def update_pac(self):
         # Broadcast and handle the response for each
+        self.log_info('HIT')
         self.broadcast_all(msg=self.compose_package(msg_type='y'))
+        self.broadcast_all(msg=self.compose_package(msg_type='nu_bar'))
 
 
 class Coordinator(Agent):
@@ -175,15 +178,20 @@ class Main:
         for node in self.node_dict.values():
             node.initial_broadcast_nu_bar()
 
-    def run_PAC(self, T=100):
+    def run_PAC(self, T: float):
 
-        for t in range(T):
-            print(f'Round {t}/{T}')
-            for node in self.node_dict.values():
-                node.update_pac()
+        # for t in range(1, T+1):
+        #     print(f'Round {t}/{T}')
+        #     for node in self.node_dict.values():
+        #         node.update_pac()
 
-        for node_name, node in self.node_dict.items():
-            print(node_name, node.get_attr('atom')._y)
+        for name, node in self.node_dict.items():
+            node.each(0., 'update_pac')
+
+        time.sleep(T)
+
+        # for node_name, node in self.node_dict.items():
+        #     print(node_name, node.get_attr('atom').get_y())
 
         # Terminate
         self.ns.shutdown()

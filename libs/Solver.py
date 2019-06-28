@@ -3,7 +3,7 @@ import numpy as np
 import cvxpy as cp
 
 
-SOLVER = cp.ECOS
+SOLVER = cp.ECOS_BB
 
 
 def timeit(method):
