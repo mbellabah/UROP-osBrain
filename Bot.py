@@ -36,10 +36,11 @@ class Bot(Agent):
     # MARK: Communication
     def reply_to_request(self, request: dict) -> dict:      # When asked something, provide data on self
         """
-        :param request: {is_request: bool, data_type: str}
+        :param request: {is_request: bool, data_type: str, sender: str}
         """
         if request['is_request']:
             request_data_type = request['data_type']
+            # self.log_info('being asked for {} by {}'.format(request['data_type'], request['sender']))
             return self.compose_data_package(data_type=request_data_type)
 
     def process_reply(self, response: dict):     # After request, how to process the subsequent reply
@@ -58,7 +59,7 @@ class Bot(Agent):
 
     def send_request(self, request: dict, recipient: str):
         """
-        :param request: {is_request: bool, data_type: str}
+        :param request: {is_request: bool, data_type: str, sender: str}
         :param recipient: str
         :return:
         """
@@ -72,7 +73,7 @@ class Bot(Agent):
         """
         Requests data_type from all neighbors
         """
-        request: dict = {'is_request': True, 'data_type': data_type}
+        request: dict = {'is_request': True, 'data_type': data_type, 'sender': self.name}
         for j in self.neighbors:
             bot_name: str = f'Bot-{j}'
             self.send_request(request=request, recipient=bot_name)
@@ -115,18 +116,17 @@ class Bot(Agent):
     def run_pac(self):
         # Perform the updates
         if self.pending == 0:
-            if self.is_synchronized():
-                self.atom.update_y_and_mu()
-                self.round_y += 1
-                self.request_all(data_type='y')
+            self.round_y += 1
+            self.atom.update_y_and_mu()
+            self.request_all(data_type='y')
         else:
             self.log_info('Waiting {}'.format(self.pending))
             self.idle()
 
-        self.log_info('round {}, pending {}, and {}'.format(self.round_y, self.pending, self.atom.mu_bar))
+        self.log_info('round {}, pending {}, and {}'.format(self.round_y, self.pending, self.atom.get_y()))
 
     def periodic_pac(self, delta_t: float = 2):
-        self.each(delta_t, 'run_pac')       # FIXME: May have to change the delta t here
+        self.each(delta_t, 'run_pac')     # FIXME: May have to change the delta t here
 
     def is_synchronized(self):
         for round_y, round_nu_bar in self.neighbor_round.values():
