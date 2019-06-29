@@ -53,9 +53,10 @@ class Bot(Agent):
         # If initializing the variables
         if self.pending == 0 and self.is_init_y:
             self.atom.init_dual_vars()
-            self.init_pac_nu_bar()
-            self.round_y += 1
             self.is_init_y = False      # so as to not run again
+
+        if self.pending == 0 and self.is_init_nu_bar:
+            self.is_init_nu_bar = False
 
     def send_request(self, request: dict, recipient: str):
         """
@@ -116,23 +117,36 @@ class Bot(Agent):
     def run_pac(self):
         # Perform the updates
         if self.pending == 0:
-            self.round_y += 1
-            self.atom.update_y_and_mu()
-            self.request_all(data_type='y')
+            y_bool, nu_bar_bool = self.is_synchronized()
+            # Check if y-round is synchronized
+            if y_bool:
+                self.round_y += 1
+                self.atom.update_y_and_mu()
+                self.request_all(data_type='y')
+            if nu_bar_bool:
+                self.round_nu_bar += 1
+                self.atom.update_nu()
+                self.request_all(data_type='nu_bar')
         else:
-            self.log_info('Waiting {}'.format(self.pending))
             self.idle()
 
-        self.log_info('round {}, pending {}, and {}'.format(self.round_y, self.pending, self.atom.get_y()))
+        # self.log_info(self.atom.global_atom_nu_bar)
+        # self.log_info('round {}, pending {}, and {}'.format(self.round_y, self.pending, self.atom.get_y()))
 
     def periodic_pac(self, delta_t: float = 2):
         self.each(delta_t, 'run_pac')     # FIXME: May have to change the delta t here
 
-    def is_synchronized(self):
+    def is_synchronized(self) -> Tuple[bool, bool]:
+        y_bool: bool = True
+        nu_bar_bool: bool = True
         for round_y, round_nu_bar in self.neighbor_round.values():
             if self.round_y != round_y:  # or self.round_nu_bar != round_nu_bar:
-                return False
-        return True
+                y_bool = False
+                break
+            if self.round_nu_bar != round_nu_bar:
+                nu_bar_bool = False
+                break
+        return y_bool, nu_bar_bool
 
 
 class Coordinator(Agent):
@@ -185,12 +199,16 @@ class Main:
         for bot in self.bot_dict.values():
             bot.init_pac_y()
 
+        for bot in self.bot_dict.values():
+            bot.init_pac_nu_bar()
+
     def run(self, runtime: int):
         self.setup_atoms()
 
         # # Periodic...
         for bot in self.bot_dict.values():
-            bot.periodic_pac()
+            bot.periodic_pac(delta_t=0.5)
+
         t_end = time.time() + runtime
         while time.time() < t_end:
             pass
@@ -201,6 +219,7 @@ class Main:
         # time.sleep(runtime)
 
         for bot in self.bot_dict.values():
-            bot.log_info(bot.get_attr('atom').mu_bar)
+            bot.log_info(bot.get_attr('atom').get_y())
+            pass
 
         self.ns.shutdown()

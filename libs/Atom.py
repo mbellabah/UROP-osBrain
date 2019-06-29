@@ -68,10 +68,13 @@ class Atom(object):
         self.global_atom_nu_bar[self.atom_id] = self.nu_bar
 
     # MARK: PAC
-    def atomic_objective_function(self, var):
+    def cost_function(self, var):
         xi = 1.0        # FIXME: Integrate with Network Grid topo
 
-        gen_cost = 0.0; load_util = 0.0; loss = 0.0
+        gen_cost = 0.0
+        load_util = 0.0
+        loss = 0.0
+
         if self._bus_type == 'feeder':
             # yj = [PGj, PLj, QGj, QLj, vj, {Pjh, Qjh}]
             beta_pg = 1
@@ -84,6 +87,17 @@ class Atom(object):
             load_util: float = self._beta_pl*cp.square(var[1] - self._PL[0]) + self._beta_ql*cp.square(var[3] - self._QL[0])
 
         return gen_cost + load_util + loss      # FIXME: Implement atomic loss
+
+    def atomic_objective_function(self, var):
+        qmj_tuple = ()
+        for m in range(self._global_num_nodes):
+            qmj_tuple += (self._Qmj[m][0][self.atom_id-1],)     # because indexing of atom starts at 1
+        Qmj = np.vstack(qmj_tuple)
+
+        # print("atom: {}, globalnu: {}, qmj: {}, candidate_a: {}".format(self.atom_id, self.get_global_nu_bar().T.shape, Qmj.shape, var.shape))
+        total = self.get_global_nu_bar().T@Qmj@var
+
+        return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self.rho)*cp.sum_squares(var-self.get_y()))
 
     def solve_atomic_objective_function(self) -> np.array:
         return atomic_solve(self.atomic_objective_function, self._y.shape, Bj=self._Bj, bj=self._bj)
