@@ -1,7 +1,7 @@
 from typing import Dict, Tuple
 import numpy as np
 import cvxpy as cp  # FIXME: Move this elsewhere!
-from libs.Solver import atomic_solve
+from libs.solver import atomic_solve
 
 
 class Atom(object):

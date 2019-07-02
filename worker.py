@@ -2,8 +2,8 @@ from osbrain import run_agent
 from osbrain import run_nameserver
 from osbrain import Agent
 
-from libs.Network import GridTopology3Node
-from libs.Atom import Atom
+from libs.network import GridTopology3Node
+from libs.atom import Atom
 
 from typing import Dict, Any
 import numpy as np

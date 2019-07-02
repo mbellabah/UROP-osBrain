@@ -6,8 +6,8 @@ from osbrain import run_agent
 from osbrain import run_nameserver
 from osbrain import Agent
 
-from libs.Network import GridTopology3Node
-from libs.Atom import Atom
+from libs.network import GridTopology3Node
+from libs.atom import Atom
 
 
 # MARK: Channels
@@ -223,3 +223,9 @@ class Main:
             pass
 
         self.ns.shutdown()
+
+
+# TODO: Think about the B-j (=Qmj) and how to make it "private"
+# TODO: Metrics sourced in a distributed fashion {'feasibility' and 'consistency'}
+# TODO: Implement half the penalty of every edge (incoming and outgoing)
+# TODO: Implement the multiperiod stuff (Underlying architecture doesn't change)
