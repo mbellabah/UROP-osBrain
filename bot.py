@@ -116,6 +116,7 @@ class Bot(Agent):
 
     def run_pac(self):
         # Perform the updates
+        self.log_info(f'Round: {self.round_y}')
         if self.pending == 0:
             y_bool, nu_bar_bool = self.is_synchronized()
             # Check if y-round is synchronized
@@ -133,7 +134,7 @@ class Bot(Agent):
         # self.log_info(self.atom.global_atom_nu_bar)
         # self.log_info('round {}, pending {}, and {}'.format(self.round_y, self.pending, self.atom.get_y()))
 
-    def periodic_pac(self, delta_t: float = 2):
+    def periodic_pac(self, delta_t: float = 1):
         self.each(delta_t, 'run_pac')     # FIXME: May have to change the delta t here
 
     def is_synchronized(self) -> Tuple[bool, bool]:
@@ -207,7 +208,7 @@ class Main:
 
         # # Periodic...
         for bot in self.bot_dict.values():
-            bot.periodic_pac(delta_t=0.5)
+            bot.periodic_pac(delta_t=1)
 
         t_end = time.time() + runtime
         while time.time() < t_end:
@@ -224,8 +225,11 @@ class Main:
 
         self.ns.shutdown()
 
+    def diagnostics(self):
+        pass
 
-# TODO: Think about the B-j (=Qmj) and how to make it "private"
-# TODO: Metrics sourced in a distributed fashion {'feasibility' and 'consistency'}
+
+# TODO: (1) Think about the B-j (=Qmj) and how to make it "private"
+# TODO: (2) Metrics sourced in a distributed fashion {'feasibility' and 'consistency'} -- fixed num of iterations
 # TODO: Implement half the penalty of every edge (incoming and outgoing)
 # TODO: Implement the multiperiod stuff (Underlying architecture doesn't change)

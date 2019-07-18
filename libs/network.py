@@ -146,11 +146,18 @@ class GridTopologyBase(Network):
         self._N = np.int(self._N)
 
     def setup(self):
+        # _nodes: Dict[Tuple[int, dict]] = {
+        #     i: (i, {
+        #         'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0, 'reactive_gen': 0.0, 'beta_pl': 3*np.random.rand()+2, 'beta_pg': np.random.rand()+2, 'beta_ql': 3*np.random.rand()+2, 'beta_qg': 3*np.random.rand()+2
+        #     }) for i in range(1, self._N+1)
+        # }
+
         _nodes: Dict[Tuple[int, dict]] = {
             i: (i, {
-                'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0, 'reactive_gen': 0.0, 'beta_pl': 3*np.random.rand()+2, 'beta_pg': np.random.rand()+2, 'beta_ql': 3*np.random.rand()+2, 'beta_qg': 3*np.random.rand()+2
+                'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0, 'reactive_gen': 0.0, 'beta_pl': 1, 'beta_pg': 1, 'beta_ql': 1, 'beta_qg': 1
             }) for i in range(1, self._N+1)
         }
+
         # Note that node 1 is a feeder
         _nodes[1][1]['bus_type'] = 'feeder'
 
@@ -204,26 +211,32 @@ class GridTopologyBase(Network):
             self.set_node_attribute(j, 'neighbors', dict(self.graph[j]))
             self.set_node_attribute(j, 'global_num_nodes', self._N)
 
-            # assuming only 1 feeder in the whole network
+            i = min(self.graph.node('neighbors')[j].keys())     # potential upstream node
+            if not(i < j):
+                # must be a feeder
+                i = 'None'
+            self.set_node_attribute(j, 'parent_node', i)
+
+            # assuming only 1 feeder (root) in the whole network -- is given # 1
             # assign the correct length vector according to to the number of its neighbors
             n_neighbors = len(self.graph[j])
-            if self.graph.node[j]['bus_type'] == 'feeder':
-                # yj = [PGj, PLj, QGj, QLj, vj, {Pjh, Qjh}]
+            if self.graph.node('bus_type')[j] == 'feeder':      # feeder node
+                # yj = [PLj, PGj, QLj, QGj, vj, {Pjk, Qjk}] --> use this
                 y_vector = np.ones((5 + n_neighbors*2, 1))
             else:
                 if n_neighbors == 1:    # end node
-                    # yj = [PGj, PLj, QGj, QLj, vj, {vi, Pij, Qij, lij}]
+                    # yj = [Pij, Qij, lij, PLj, PGj, QLj, QGj, vj, {vi}] --> use this
                     y_vector = np.ones((9, 1))
-                else:
-                    # yj = [PGj, PLj, QGj, QLj, vj, {vi, Pij, Qij, lij, Pjh, Qjh}]
-                    y_vector = np.ones((5 + 2 + 4*(n_neighbors-1), 1))
+                else:       # 'middle' node
+                    # yj = [Pij, Qij, Lij, PLj, PGj, QLj, QGj, vj, {vi, Pjk, Qjk, . . .}] --> use this
+                    y_vector = np.ones((9 + 2*(n_neighbors-1), 1))
 
             self.set_node_attribute(j, 'y', y_vector)
 
 
 class GridTopology3Node(GridTopologyBase):
 
-    def __init__(self, riaps: bool = True):
+    def __init__(self, riaps: bool = True, verbose: bool = True):
         self.xi: float = 1.0
         self.feeder_cost = 1.0
         if riaps:
@@ -231,9 +244,9 @@ class GridTopology3Node(GridTopologyBase):
         else:
             load_mat: str = 'config/GridTopo3Node.mat'
 
-        super(GridTopology3Node, self).__init__(load_mat=load_mat, verbose=False)
+        super(GridTopology3Node, self).__init__(load_mat=load_mat, verbose=verbose)
 
 
 if __name__ == '__main__':
-    grid = GridTopology3Node(riaps=False)
-    print(grid.graph.node('y')[3])
+    grid = GridTopology3Node(riaps=False, verbose=True)
+    print(grid.graph.node('neighbors')[2])

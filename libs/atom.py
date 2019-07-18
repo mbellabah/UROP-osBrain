@@ -71,7 +71,6 @@ class Atom(object):
     def cost_function(self, var):
         xi = 1.0        # FIXME: Integrate with Network Grid topo
 
-        gen_cost = 0.0
         load_util = 0.0
         loss = 0.0
 
@@ -79,14 +78,29 @@ class Atom(object):
             # yj = [PGj, PLj, QGj, QLj, vj, {Pjh, Qjh}]
             beta_pg = 1
             beta_qg = 1
-            gen_cost: float = beta_pg*var[0] + beta_qg*var[2]
-        else:
-            # yj = [PGj, PLj, QGj, QLj, vj, {vi, Pij, Qij, lij}] OR
-            # yj = [PGj, PLj, QGj, QLj, vj, {vi, Pij, Qij, lij, Pjh, Qjh}]
-            gen_cost: float = self._beta_pg*cp.square(var[0]) + self._beta_qg*cp.square(var[2])
-            load_util: float = self._beta_pl*cp.square(var[1] - self._PL[0]) + self._beta_ql*cp.square(var[3] - self._QL[0])
 
-        return gen_cost + load_util + loss      # FIXME: Implement atomic loss
+            PG: float = var[1]
+            QG: float = var[3]
+
+            gen_cost: float = beta_pg*PG + beta_qg*QG
+        else:
+            # yj = [Pij, Qij, lij, PLj, PGj, QLj, QGj, vj, {vi}] (end node) OR
+            # yj = [Pij, Qij, Lij, PLj, PGj, QLj, QGj, vj, {vi, Pjk, Qjk, . . .}] ('middle' node)
+
+            PG: float = var[4]
+            QG: float = var[6]
+            PL: float = var[3]
+            QL: float = var[5]
+            Lij: float =  var[2]       # the current flow on the upstream line
+
+            gen_cost: float = self._beta_pg*cp.square(PG - self._PG[1]) + self._beta_qg*cp.square(QG - self._QG[1])
+            load_util: float = self._beta_pl*cp.square(PL - self._PL[0]) + self._beta_ql*cp.square(QL - self._QL[0])
+
+            parent_node: int = int(self._parent_node)
+            upstream_line_resistance: float = self._neighbors[parent_node]['resistance']
+            loss: float = upstream_line_resistance * Lij
+
+        return gen_cost + load_util + loss
 
     def atomic_objective_function(self, var):
         qmj_tuple = ()
