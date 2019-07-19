@@ -145,10 +145,11 @@ class Bot(Agent):
     def is_synchronized(self) -> Tuple[bool, bool]:
         y_bool: bool = True
         nu_bar_bool: bool = True
-        for round_y, round_nu_bar in self.neighbor_round.values():
+        for round_y, _ in self.neighbor_round.values():
             if self.round_y != round_y:  # or self.round_nu_bar != round_nu_bar:
                 y_bool = False
                 break
+        for _, round_nu_bar in self.neighbor_round.values():
             if self.round_nu_bar != round_nu_bar:
                 nu_bar_bool = False
                 break

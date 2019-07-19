@@ -3,4 +3,4 @@ from bot import Main
 
 if __name__ == '__main__':
     main_class = Main(num_bots=3)
-    main_class.run(rounds=500)
+    main_class.run(rounds=10)
