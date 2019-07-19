@@ -1,6 +1,7 @@
 import time
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
+import matplotlib.pyplot as plt
 
 from osbrain import run_agent
 from osbrain import run_nameserver
@@ -32,6 +33,8 @@ class Bot(Agent):
 
         self.is_init_y: bool = False
         self.is_init_nu_bar: bool = False
+
+        self.feasibility: List[float] = []
 
     # MARK: Communication
     def reply_to_request(self, request: dict) -> dict:      # When asked something, provide data on self
@@ -117,6 +120,8 @@ class Bot(Agent):
     def run_pac(self):
         # Perform the updates
         self.log_info(f'Round: {self.round_y}')
+        self.feasibility.append(self.atom._Gj @ self.atom.get_y())
+
         if self.pending == 0:
             y_bool, nu_bar_bool = self.is_synchronized()
             # Check if y-round is synchronized
@@ -135,7 +140,7 @@ class Bot(Agent):
         # self.log_info('round {}, pending {}, and {}'.format(self.round_y, self.pending, self.atom.get_y()))
 
     def periodic_pac(self, delta_t: float = 1):
-        self.each(delta_t, 'run_pac')     # FIXME: May have to change the delta t here
+        self.each(delta_t, 'run_pac', alias='periodic_pac')
 
     def is_synchronized(self) -> Tuple[bool, bool]:
         y_bool: bool = True
@@ -203,30 +208,57 @@ class Main:
         for bot in self.bot_dict.values():
             bot.init_pac_nu_bar()
 
-    def run(self, runtime: int):
+    def run(self, rounds: int = 10):
         self.setup_atoms()
 
+        delta_t = 0.2
+        runtime = rounds*delta_t
         # # Periodic...
         for bot in self.bot_dict.values():
-            bot.periodic_pac(delta_t=1)
+            bot.periodic_pac(delta_t=delta_t)
 
         t_end = time.time() + runtime
         while time.time() < t_end:
             pass
+
+        for bot in self.bot_dict.values():
+            bot.stop_timer('periodic_pac')
 
         # # Aperiodic...
         # for bot in self.bot_dict.values():
         #     bot.run_pac()
         # time.sleep(runtime)
 
-        for bot in self.bot_dict.values():
-            bot.log_info(bot.get_attr('atom').get_y())
-            pass
-
+        # self.diagnostics()
         self.ns.shutdown()
 
     def diagnostics(self):
-        pass
+        # TODO: Fix bug here
+        # constraints feasibility
+        print('-'*40)
+        print('-'*40)
+
+        bot_feasibility: dict = {}
+        for bot_name, bot in self.bot_dict.items():
+            bot_feasibility[bot_name] = bot.get_attr('feasibility')
+
+        feasibility: List[float] = []
+        for i in range(len(bot_feasibility['Bot-1'])):
+            stacked_vector_tuple = ()
+            for bot_name, feasibility_vec in bot_feasibility.items():
+                stacked_vector_tuple += (feasibility_vec[i],)
+
+            stacked_vector: np.array = np.vstack(stacked_vector_tuple)
+            error: float = np.linalg.norm(stacked_vector)
+            feasibility.append(error)
+
+        plt.plot(feasibility)
+        plt.ylabel('round number')
+
+        print('-'*40)
+        print('-'*40)
+
+        plt.show()
 
 
 # TODO: (1) Think about the B-j (=Qmj) and how to make it "private"

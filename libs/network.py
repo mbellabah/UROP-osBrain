@@ -6,7 +6,6 @@ from typing import List, Dict, Tuple
 
 
 class Network(object):
-
     def __init__(self, nodes=None, edges=None, graph: nx.Graph or None = None, graph_type='normal', normalize=False):
         self.graph_type = graph_type
         self.normalize: bool = normalize
@@ -95,7 +94,6 @@ class Network(object):
 
 
 class GridTopologyBase(Network):
-
     def __init__(self, load_mat: str = '', verbose=False):
         self.S_base = 1000e3
         self.eta_P: float = 0.1
@@ -211,11 +209,11 @@ class GridTopologyBase(Network):
             self.set_node_attribute(j, 'neighbors', dict(self.graph[j]))
             self.set_node_attribute(j, 'global_num_nodes', self._N)
 
-            i = min(self.graph.node('neighbors')[j].keys())     # potential upstream node
+            k = min(self.graph.node('neighbors')[j].keys())     # potential upstream node
             if not(i < j):
                 # must be a feeder
-                i = 'None'
-            self.set_node_attribute(j, 'parent_node', i)
+                k = 'None'
+            self.set_node_attribute(j, 'parent_node', k)
 
             # assuming only 1 feeder (root) in the whole network -- is given # 1
             # assign the correct length vector according to to the number of its neighbors
@@ -235,8 +233,7 @@ class GridTopologyBase(Network):
 
 
 class GridTopology3Node(GridTopologyBase):
-
-    def __init__(self, riaps: bool = True, verbose: bool = True):
+    def __init__(self, riaps: bool = True, verbose: bool = False):
         self.xi: float = 1.0
         self.feeder_cost = 1.0
         if riaps:

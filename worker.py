@@ -1,3 +1,9 @@
+####################################################
+'''
+DEPRECATED AND UNUSED, IGNORE THIS FILE
+'''
+#####################################################
+
 from osbrain import run_agent
 from osbrain import run_nameserver
 from osbrain import Agent
