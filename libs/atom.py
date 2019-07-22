@@ -114,7 +114,9 @@ class Atom(object):
         return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self.rho)*cp.sum_squares(var-self.get_y()))
 
     def solve_atomic_objective_function(self) -> np.array:
-        return atomic_solve(self.atomic_objective_function, self._y.shape, Bj=self._Bj, bj=self._bj)
+        parent_node: int = int(self._parent_node)
+        upstream_line_thermal_limit: float = self._neighbors[parent_node]['thermal_limit']
+        return atomic_solve(self.atomic_objective_function, self._y.shape, Bj=self._Bj, bj=self._bj, bus_type=self._bus_type, thermal_limit=upstream_line_thermal_limit)
 
     def update_y_and_mu(self):
         try:

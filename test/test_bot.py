@@ -32,6 +32,5 @@ class TestBot(TestCase):
             (False, True)
         ]
 
-
         for i in range(len(inputs)):
             self.assertEqual(is_synchronized(*inputs[i]), outputs[i])

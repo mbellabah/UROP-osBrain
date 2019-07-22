@@ -245,5 +245,5 @@ class GridTopology3Node(GridTopologyBase):
 
 
 if __name__ == '__main__':
-    grid = GridTopology3Node(riaps=False, verbose=True)
-    print(grid.graph.node('neighbors')[2])
+    grid = GridTopology3Node(riaps=False, verbose=False)
+    print(grid.graph.node('neighbors')[1])
