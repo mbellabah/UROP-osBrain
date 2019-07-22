@@ -5,11 +5,8 @@ from libs.solver import atomic_solve
 
 
 class Atom(object):
-    def __init__(self, atom_id: int, node_data_package: dict, rho: float = 0.17, gamma: float = 3.14):
+    def __init__(self, atom_id: int, node_data_package: dict):
         self.atom_id = atom_id
-
-        self.rho = rho
-        self.gamma = gamma
         self.node_data_package = node_data_package
 
         # set the attributes from the node data package
@@ -57,12 +54,12 @@ class Atom(object):
         return np.vstack(nu_bar_tuple)
 
     def init_dual_vars(self):
-        self.mu: np.array = self.rho * self.gamma * self._Gj @ self._y
+        self.mu: np.array = self._rho * self._gamma * self._Gj @ self._y
         self.mu_bar: np.array = np.ones_like(self.mu)
 
         global_y_mat: np.array = self._Aj @ self.get_global_y()
-        self.nu: np.array = self.rho * self.gamma * global_y_mat
-        self.nu_bar: np.array = self.nu + self.rho * self.gamma * global_y_mat
+        self.nu: np.array = self._rho * self._gamma * global_y_mat
+        self.nu_bar: np.array = self.nu + self._rho * self._gamma * global_y_mat
 
         # set nu_bar
         self.global_atom_nu_bar[self.atom_id] = self.nu_bar
@@ -111,7 +108,7 @@ class Atom(object):
         # print("atom: {}, globalnu: {}, qmj: {}, candidate_a: {}".format(self.atom_id, self.get_global_nu_bar().T.shape, Qmj.shape, var.shape))
         total = self.get_global_nu_bar().T@Qmj@var
 
-        return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self.rho)*cp.sum_squares(var-self.get_y()))
+        return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self._rho)*cp.sum_squares(var-self.get_y()))
 
     def solve_atomic_objective_function(self) -> np.array:
         parent_node: int = int(self._parent_node)
@@ -124,8 +121,8 @@ class Atom(object):
 
             # update mu
             mat_product: np.array = self._Gj @ self._y
-            self.mu += self.rho * self.gamma * mat_product
-            self.mu_bar = self.mu + self.rho * self.gamma * mat_product
+            self.mu += self._rho * self._gamma * mat_product
+            self.mu_bar = self.mu + self._rho * self._gamma * mat_product
 
         except ValueError as e:
             print('Could not solve for y')
@@ -133,8 +130,8 @@ class Atom(object):
 
     def update_nu(self):
         mat_product: np.array = self._Aj @ self.get_global_y()
-        self.nu += self.rho * self.gamma * mat_product
-        self.nu_bar = self.nu + self.rho * self.gamma * mat_product
+        self.nu += self._rho * self._gamma * mat_product
+        self.nu_bar = self.nu + self._rho * self._gamma * mat_product
 
     def __str__(self):
         return f'I am atom-{self.atom_id}, with example: {self.get_y()}'

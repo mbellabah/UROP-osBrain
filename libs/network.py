@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import networkx as nx
+from scipy.linalg import block_diag
 from scipy.io import loadmat
 from typing import List, Dict, Tuple
 
@@ -193,6 +194,25 @@ class GridTopologyBase(Network):
         Gj_mats: List[np.array] = self._fcnCA[5][0]
         Qmj_mats: List[np.array] = self._fcnCA[4][0]
 
+        # Compute the PAC parameters
+        Phi = 1.8744
+        alpha = 0.005
+        L = 100
+
+        GHat = (np.asarray(Gj_mats[j-1]) for j in range(1, self._N+1))
+        GHat = block_diag(*GHat)
+        A = tuple(np.asarray(Aj_mats[j-1]) for j in range(1, self._N+1))
+        A = np.vstack(A)
+        total = GHat.T@GHat + A.T@A
+        eigs_PAC = np.linalg.eigvals(total).real
+        sigmax_PAC = max(eigs_PAC)
+        eigs_PAC[np.where(eigs_PAC < 1e-3)] = np.inf
+        sigmin_PAC = min(eigs_PAC)
+
+        gamma = (2*alpha*L)/(2*sigmax_PAC + sigmin_PAC)
+        rho = 1/np.sqrt(gamma*sigmax_PAC)
+
+        # Dole out to the atoms or agents
         for j in range(1, self._N+1):
             i = j - 1
             self.set_node_attribute(j, 'Aj', Aj_mats[i])
@@ -205,6 +225,8 @@ class GridTopologyBase(Network):
             self.set_node_attribute(j, 'PG', (self.PGLow[i], self.PGUpp[i]))
             self.set_node_attribute(j, 'QL', (self.QLLow[i], self.QLUpp[i]))
             self.set_node_attribute(j, 'QG', (self.QGLow[i], self.QGUpp[i]))
+            self.set_node_attribute(j, 'gamma', gamma)
+            self.set_node_attribute(j, 'rho', rho)
 
             self.set_node_attribute(j, 'neighbors', dict(self.graph[j]))
             self.set_node_attribute(j, 'global_num_nodes', self._N)
@@ -246,4 +268,4 @@ class GridTopology3Node(GridTopologyBase):
 
 if __name__ == '__main__':
     grid = GridTopology3Node(riaps=False, verbose=False)
-    print(grid.graph.node('neighbors')[1])
+    # print(grid._G)
