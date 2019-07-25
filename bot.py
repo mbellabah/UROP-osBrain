@@ -1,4 +1,4 @@
-import time
+import logging
 import numpy as np
 from typing import Dict, Tuple, List
 import matplotlib.pyplot as plt
@@ -14,6 +14,8 @@ from libs.atom import Atom
 # MARK: Channels
 COORDINATOR_CHANNEL = 'coordinator'
 
+logger = logging.getLogger('bot')
+logging.basicConfig(level=logging.DEBUG, filename="logfile", filemode="w+", format="%(asctime)-15s %(message)s")
 
 # MARK: Classes
 class Bot(Agent):
@@ -35,6 +37,7 @@ class Bot(Agent):
         self.is_init_nu_bar: bool = False
 
         self.feasibility: List[float] = []
+        self.historical_trail = []
 
     # MARK: Communication
     def reply_to_request(self, request: dict) -> dict:      # When asked something, provide data on self
@@ -43,8 +46,9 @@ class Bot(Agent):
         """
         if request['is_request']:
             request_data_type = request['data_type']
-            # self.log_info('being asked for {} by {}'.format(request['data_type'], request['sender']))
-            return self.compose_data_package(data_type=request_data_type)
+            reply = self.compose_data_package(data_type=request_data_type)
+            logger.info('Bot-{} was asked for {} by {}\ngiving: {}'.format(self.bot_id, request['data_type'], request['sender'], reply['payload']))
+            return reply
 
     def process_reply(self, response: dict):     # After request, how to process the subsequent reply
         """
@@ -119,22 +123,27 @@ class Bot(Agent):
 
     def run_pac(self):
         # Perform the updates
-        self.log_info(f'Round: {self.round_y}')
+        self.log_info(f'Round: {self.round_y}, {self.round_nu_bar}')
         self.feasibility.append(self.atom._Gj @ self.atom.get_y())
 
+        y_bool, nu_bar_bool = self.is_synchronized()
+
         if self.pending == 0:
-            y_bool, nu_bar_bool = self.is_synchronized()
             # Check if y-round is synchronized
             if y_bool:
                 self.round_y += 1
                 self.atom.update_y_and_mu()
+                self.historical_trail.append(self.atom.get_y())
+                # self.request_all(data_type='y')
+            else:
                 self.request_all(data_type='y')
+
             if nu_bar_bool:
                 self.round_nu_bar += 1
                 self.atom.update_nu()
+                # self.request_all(data_type='nu_bar')
+            else:
                 self.request_all(data_type='nu_bar')
-        else:
-            self.idle()
 
         # self.log_info(self.atom.global_atom_nu_bar)
         # self.log_info('round {}, pending {}, and {}'.format(self.round_y, self.pending, self.atom.get_y()))
@@ -212,15 +221,16 @@ class Main:
     def run(self, rounds: int = 10):
         self.setup_atoms()
 
-        delta_t = 0.2
-        runtime = rounds*delta_t
+        delta_t = 0.4
         # # Periodic...
         for bot in self.bot_dict.values():
             bot.periodic_pac(delta_t=delta_t)
 
-        t_end = time.time() + runtime
-        while time.time() < t_end:
-            pass
+        flag = True
+        while flag:
+            for bot in self.bot_dict.values():
+                if bot.get_attr('round_y') == rounds and bot.get_attr('round_nu_bar') == rounds:
+                    flag = False
 
         for bot in self.bot_dict.values():
             bot.stop_timer('periodic_pac')
@@ -230,7 +240,7 @@ class Main:
         #     bot.run_pac()
         # time.sleep(runtime)
 
-        # self.diagnostics()
+        self.diagnostics()
         self.ns.shutdown()
 
     def diagnostics(self):
@@ -254,10 +264,19 @@ class Main:
             feasibility.append(error)
 
         plt.plot(feasibility)
-        plt.ylabel('round number')
+        plt.xlabel('round number')
 
         print('-'*40)
         print('-'*40)
+
+        for bot in self.bot_dict.values():
+            print(bot.get_attr('atom').get_y(), "\n")
+
+        for _ in range(5):
+            print('-'*40)
+
+        for bot in self.bot_dict.values():
+            print(bot.get_attr('historical_trail'), "\n")
 
         plt.show()
 

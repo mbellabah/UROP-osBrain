@@ -54,11 +54,12 @@ class Atom(object):
         return np.vstack(nu_bar_tuple)
 
     def init_dual_vars(self):
-        self.mu: np.array = self._rho * self._gamma * self._Gj @ self._y
+        self.mu: np.array = np.zeros_like(self._rho * self._gamma * self._Gj @ self._y)
         self.mu_bar: np.array = np.ones_like(self.mu)
 
         global_y_mat: np.array = self._Aj @ self.get_global_y()
-        self.nu: np.array = self._rho * self._gamma * global_y_mat
+
+        self.nu: np.array = np.zeros_like(self._rho * self._gamma * global_y_mat)
         self.nu_bar: np.array = self.nu + self._rho * self._gamma * global_y_mat
 
         # set nu_bar
@@ -88,14 +89,14 @@ class Atom(object):
             QG: float = var[6]
             PL: float = var[3]
             QL: float = var[5]
-            Lij: float =  var[2]       # the current flow on the upstream line
+            Lij: float = var[2]       # the current flow on the upstream line
 
             gen_cost: float = self._beta_pg*cp.square(PG - self._PG[1]) + self._beta_qg*cp.square(QG - self._QG[1])
             load_util: float = self._beta_pl*cp.square(PL - self._PL[0]) + self._beta_ql*cp.square(QL - self._QL[0])
 
             parent_node: int = int(self._parent_node)
             upstream_line_resistance: float = self._neighbors[parent_node]['resistance']
-            loss: float = upstream_line_resistance * Lij
+            loss: float = xi*upstream_line_resistance * Lij
 
         return gen_cost + load_util + loss
 
@@ -118,7 +119,6 @@ class Atom(object):
     def update_y_and_mu(self):
         try:
             self._y: np.array = self.solve_atomic_objective_function()
-
             # update mu
             mat_product: np.array = self._Gj @ self._y
             self.mu += self._rho * self._gamma * mat_product
@@ -130,6 +130,8 @@ class Atom(object):
 
     def update_nu(self):
         mat_product: np.array = self._Aj @ self.get_global_y()
+        print(self.atom_id, self.get_global_y())
+        # print("\n")
         self.nu += self._rho * self._gamma * mat_product
         self.nu_bar = self.nu + self._rho * self._gamma * mat_product
 
