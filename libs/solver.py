@@ -111,8 +111,8 @@ def atomic_solve(optimize_equation_func, a_shape: tuple, Bj: np.array, bj: np.ar
             cp.quad_over_lin(mat_product, candidate_a[8]) <= candidate_a[2],
             cp.quad_over_lin(mat_product, thermal_limit) <= thermal_limit
         ]
-    constraints = [Bj@candidate_a <= bj] + quad_constraints
 
+    constraints = [Bj@candidate_a <= bj] + quad_constraints
     model_objective = cp.Minimize(optimize_equation_func(candidate_a))
     model_problem = cp.Problem(model_objective, constraints)
     model_problem.solve(solver=SOLVER, verbose=False)

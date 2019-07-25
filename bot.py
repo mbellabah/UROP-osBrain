@@ -1,4 +1,5 @@
 import logging
+import threading
 import numpy as np
 from typing import Dict, Tuple, List
 import matplotlib.pyplot as plt
@@ -17,11 +18,12 @@ COORDINATOR_CHANNEL = 'coordinator'
 logger = logging.getLogger('bot')
 logging.basicConfig(level=logging.DEBUG, filename="logfile", filemode="w+", format="%(asctime)-15s %(message)s")
 
+
 # MARK: Classes
 class Bot(Agent):
     def on_init(self):
         self.bind('PUB', alias=COORDINATOR_CHANNEL)
-        self.bind('ASYNC_REP', alias=self.name, handler='reply_to_request')
+        self.bind('REP', alias=self.name, handler='reply_to_request')
 
         self.bot_id: int = int(self.name[4:])
         self.atom: Atom = None
@@ -31,7 +33,6 @@ class Bot(Agent):
 
         self.neighbors: list = list({1, 2, 3} - {self.bot_id})      # FIXME: list(self.atom_neighbor.keys())
         self.neighbor_round: Dict[str, Tuple[int, int]] = {}
-        self.pending: int = 0
 
         self.is_init_y: bool = False
         self.is_init_nu_bar: bool = False
@@ -54,16 +55,7 @@ class Bot(Agent):
         """
         :param response: {sender: str, data_type: str, round: tuple, payload: dict}
         """
-        self.pending -= 1
         self.set_package_params(**response)
-
-        # If initializing the variables
-        if self.pending == 0 and self.is_init_y:
-            self.atom.init_dual_vars()
-            self.is_init_y = False      # so as to not run again
-
-        if self.pending == 0 and self.is_init_nu_bar:
-            self.is_init_nu_bar = False
 
     def send_request(self, request: dict, recipient: str):
         """
@@ -71,11 +63,15 @@ class Bot(Agent):
         :param recipient: str
         :return:
         """
-        self.pending += 1
         self.send(
-            recipient,
-            request
+            address=recipient,
+            message=request,
+            wait=1.0,
+            on_error=self.wait_too_long
         )
+
+    def wait_too_long(self):
+        self.log_info("Waited too long")
 
     def request_all(self, data_type: str):
         """
@@ -86,6 +82,11 @@ class Bot(Agent):
             bot_name: str = f'Bot-{j}'
             self.send_request(request=request, recipient=bot_name)
             # all subsequent replies are handled by the process_reply handler
+
+            reply = self.recv(bot_name)
+            if reply['data_type'] == 'nu_bar':
+                self.log_info(reply)
+            self.process_reply(reply)
 
     def receive_setup(self, data_package: dict):
         if 'is_setup' in data_package:
@@ -112,14 +113,11 @@ class Bot(Agent):
             self.atom.global_atom_nu_bar[sender_id] = payload
 
     def init_pac_y(self):
-        if not self.is_init_y:
-            self.request_all(data_type='y')     # self.pending = num of neighbors
-            self.is_init_y = True
+        self.request_all(data_type='y')
+        self.atom.init_dual_vars()
 
     def init_pac_nu_bar(self):
-        if not self.is_init_nu_bar:
-            self.request_all(data_type='nu_bar')
-            self.is_init_nu_bar = True
+        self.request_all(data_type='nu_bar')
 
     def run_pac(self):
         # Perform the updates
@@ -128,25 +126,20 @@ class Bot(Agent):
 
         y_bool, nu_bar_bool = self.is_synchronized()
 
-        if self.pending == 0:
-            # Check if y-round is synchronized
+        # Check if y-round is synchronized
+        if (y_bool, nu_bar_bool) == (True, True):
             if y_bool:
+                self.request_all(data_type='y')
                 self.round_y += 1
                 self.atom.update_y_and_mu()
                 self.historical_trail.append(self.atom.get_y())
                 # self.request_all(data_type='y')
-            else:
-                self.request_all(data_type='y')
 
             if nu_bar_bool:
+                self.request_all(data_type='nu_bar')
                 self.round_nu_bar += 1
                 self.atom.update_nu()
                 # self.request_all(data_type='nu_bar')
-            else:
-                self.request_all(data_type='nu_bar')
-
-        # self.log_info(self.atom.global_atom_nu_bar)
-        # self.log_info('round {}, pending {}, and {}'.format(self.round_y, self.pending, self.atom.get_y()))
 
     def periodic_pac(self, delta_t: float = 1):
         self.each(delta_t, 'run_pac', alias='periodic_pac')
@@ -168,7 +161,6 @@ class Bot(Agent):
 class Coordinator(Agent):
     def on_init(self):
         self.bind('PUB', alias=COORDINATOR_CHANNEL)
-
         self.grid = None
 
     def init_environment(self):
@@ -206,25 +198,30 @@ class Main:
             for bot_name_b, bot_b in self.bot_dict.items():
                 if bot_name_a != bot_name_b:
                     bot_b_addr = bot_b.addr(alias=bot_name_b)
-                    bot_a.connect(bot_b_addr, alias=bot_name_b, handler='process_reply')
+                    bot_a.connect(bot_b_addr, alias=bot_name_b)
 
         # Setup the environment via the coordinator
         self.coordinator.init_environment()
 
-        # init pac
         for bot in self.bot_dict.values():
             bot.init_pac_y()
-
         for bot in self.bot_dict.values():
             bot.init_pac_nu_bar()
 
     def run(self, rounds: int = 10):
         self.setup_atoms()
 
-        delta_t = 0.4
+        threads: List[threading.Thread] = []
+
+        delta_t = 0.5
         # # Periodic...
         for bot in self.bot_dict.values():
-            bot.periodic_pac(delta_t=delta_t)
+            t = threading.Thread(target=bot.periodic_pac, args=(delta_t,))
+            threads.append(t)
+            # bot.periodic_pac(delta_t=delta_t)
+
+        for t in threads:
+            t.start()
 
         flag = True
         while flag:
