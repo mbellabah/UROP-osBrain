@@ -130,7 +130,6 @@ class Atom(object):
 
     def update_nu(self):
         mat_product: np.array = self._Aj @ self.get_global_y()
-        print(self.atom_id, self.get_global_y())
         # print("\n")
         self.nu += self._rho * self._gamma * mat_product
         self.nu_bar = self.nu + self._rho * self._gamma * mat_product

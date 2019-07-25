@@ -1,9 +1,11 @@
+import time
 import logging
 import threading
 import numpy as np
 from typing import Dict, Tuple, List
 import matplotlib.pyplot as plt
 
+import osbrain
 from osbrain import run_agent
 from osbrain import run_nameserver
 from osbrain import Agent
@@ -17,6 +19,8 @@ COORDINATOR_CHANNEL = 'coordinator'
 
 logger = logging.getLogger('bot')
 logging.basicConfig(level=logging.DEBUG, filename="logfile", filemode="w+", format="%(asctime)-15s %(message)s")
+
+osbrain.config['TRANSPORT'] = 'ipc'
 
 
 # MARK: Classes
@@ -39,6 +43,8 @@ class Bot(Agent):
 
         self.feasibility: List[float] = []
         self.historical_trail = []
+        self.toggle = True
+        self._DEBUG = False
 
     # MARK: Communication
     def reply_to_request(self, request: dict) -> dict:      # When asked something, provide data on self
@@ -47,6 +53,7 @@ class Bot(Agent):
         """
         if request['is_request']:
             request_data_type = request['data_type']
+            self.log_debug(f'Being asked for {request_data_type} by {request["sender"]}')
             reply = self.compose_data_package(data_type=request_data_type)
             logger.info('Bot-{} was asked for {} by {}\ngiving: {}'.format(self.bot_id, request['data_type'], request['sender'], reply['payload']))
             return reply
@@ -65,13 +72,8 @@ class Bot(Agent):
         """
         self.send(
             address=recipient,
-            message=request,
-            wait=1.0,
-            on_error=self.wait_too_long
+            message=request
         )
-
-    def wait_too_long(self):
-        self.log_info("Waited too long")
 
     def request_all(self, data_type: str):
         """
@@ -80,12 +82,10 @@ class Bot(Agent):
         request: dict = {'is_request': True, 'data_type': data_type, 'sender': self.name}
         for j in self.neighbors:
             bot_name: str = f'Bot-{j}'
+            self.log_debug(f'Requesting {data_type} from {bot_name}')
             self.send_request(request=request, recipient=bot_name)
             # all subsequent replies are handled by the process_reply handler
-
             reply = self.recv(bot_name)
-            if reply['data_type'] == 'nu_bar':
-                self.log_info(reply)
             self.process_reply(reply)
 
     def receive_setup(self, data_package: dict):
@@ -119,7 +119,7 @@ class Bot(Agent):
     def init_pac_nu_bar(self):
         self.request_all(data_type='nu_bar')
 
-    def run_pac(self):
+    def run_pac(self, data_type: str = 'y'):
         # Perform the updates
         self.log_info(f'Round: {self.round_y}, {self.round_nu_bar}')
         self.feasibility.append(self.atom._Gj @ self.atom.get_y())
@@ -127,19 +127,18 @@ class Bot(Agent):
         y_bool, nu_bar_bool = self.is_synchronized()
 
         # Check if y-round is synchronized
-        if (y_bool, nu_bar_bool) == (True, True):
-            if y_bool:
-                self.request_all(data_type='y')
-                self.round_y += 1
-                self.atom.update_y_and_mu()
-                self.historical_trail.append(self.atom.get_y())
-                # self.request_all(data_type='y')
+        if data_type == 'y':
+            self.round_y += 1
+            self.atom.update_y_and_mu()
+            self.historical_trail.append(self.atom.get_y())
+            self.request_all(data_type='y')
 
-            if nu_bar_bool:
-                self.request_all(data_type='nu_bar')
-                self.round_nu_bar += 1
-                self.atom.update_nu()
-                # self.request_all(data_type='nu_bar')
+        else:
+            self.round_nu_bar += 1
+            self.atom.update_nu()
+            self.request_all(data_type='nu_bar')
+
+            # self.request_all(data_type='nu_bar')
 
     def periodic_pac(self, delta_t: float = 1):
         self.each(delta_t, 'run_pac', alias='periodic_pac')
@@ -211,31 +210,19 @@ class Main:
     def run(self, rounds: int = 10):
         self.setup_atoms()
 
-        threads: List[threading.Thread] = []
-
-        delta_t = 0.5
-        # # Periodic...
-        for bot in self.bot_dict.values():
-            t = threading.Thread(target=bot.periodic_pac, args=(delta_t,))
-            threads.append(t)
-            # bot.periodic_pac(delta_t=delta_t)
-
-        for t in threads:
-            t.start()
+        # Aperiodic...
+        for _ in range(rounds):
+            for bot in self.bot_dict.values():
+                bot.run_pac(data_type='y')
+            for bot in self.bot_dict.values():
+                bot.run_pac(data_type='nu_bar')
 
         flag = True
         while flag:
             for bot in self.bot_dict.values():
                 if bot.get_attr('round_y') == rounds and bot.get_attr('round_nu_bar') == rounds:
                     flag = False
-
-        for bot in self.bot_dict.values():
-            bot.stop_timer('periodic_pac')
-
-        # # Aperiodic...
-        # for bot in self.bot_dict.values():
-        #     bot.run_pac()
-        # time.sleep(runtime)
+                    break
 
         self.diagnostics()
         self.ns.shutdown()
@@ -243,8 +230,8 @@ class Main:
     def diagnostics(self):
         # TODO: Fix bug here
         # constraints feasibility
-        print('-'*40)
-        print('-'*40)
+        logging.info('-'*40)
+        logging.info('-'*40)
 
         bot_feasibility: dict = {}
         for bot_name, bot in self.bot_dict.items():
@@ -263,17 +250,17 @@ class Main:
         plt.plot(feasibility)
         plt.xlabel('round number')
 
-        print('-'*40)
-        print('-'*40)
+        logging.info('-'*40)
+        logging.info('-'*40)
 
         for bot in self.bot_dict.values():
             print(bot.get_attr('atom').get_y(), "\n")
 
         for _ in range(5):
-            print('-'*40)
+            logging.info('-'*40)
 
         for bot in self.bot_dict.values():
-            print(bot.get_attr('historical_trail'), "\n")
+            logging.info(f'{bot.get_attr("historical_trail")}\n')
 
         plt.show()
 
