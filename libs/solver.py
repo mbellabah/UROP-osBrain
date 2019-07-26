@@ -103,7 +103,7 @@ def atomic_solve(optimize_equation_func, a_shape: tuple, Bj: np.array, bj: np.ar
         A = np.zeros(shape=(n, n))
         A[0, 0] = 1.0
         A[1, 1] = 1.0
-        mat_product = A@candidate_a
+        mat_product = A@candidate_a         # [Pij, Qij, 0, ...]
         """
         quad_over_lin(x, y) = sum_i (x_i)^2 <= y 
         """

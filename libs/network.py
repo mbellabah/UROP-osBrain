@@ -15,7 +15,6 @@ class Network(object):
             self.V_base = 24.9e3
             self.S_base = 1000e3
             self.V_base = 24.9e3
-            self.S_base = 1000e3
             self.Z_base = self.V_base ** 2 / self.S_base
             self.thermal_limit = 10e6 / self.S_base
             self.define_QL = 1e3 / self.S_base
@@ -123,7 +122,7 @@ class GridTopologyBase(Network):
         self.QGUpp = self.get_numpy_nodes_attribute(attribute='reactive_gen')
         self.QGLow = self.QGUpp*0
 
-        self.VLow = np.ones((self.num_nodes(), 1))*self._V0
+        self.VLow = np.ones((self.num_nodes(), 1))*self._Vlb
         self.VLow[0] = self._V0
         self.VUpp = np.ones((self.num_nodes(), 1))*self._Vub
         self.VUpp[0] = self._V0
@@ -132,6 +131,7 @@ class GridTopologyBase(Network):
         self.c: np.array = np.zeros((3 * (self._N - 1) + 2, 1))
         b_tuple: tuple = (self.PLUpp, -self.PLLow, self.PGUpp, -self.PGLow, self.QLUpp, -self.QLLow, self.QGUpp, -self.QGLow, self.VUpp, -self.VLow)
         self.b: np.array = np.vstack(b_tuple)
+        self.A = None
 
         self.assign_to_nodes()
 
@@ -153,7 +153,7 @@ class GridTopologyBase(Network):
 
         _nodes: Dict[Tuple[int, dict]] = {
             i: (i, {
-                'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0, 'reactive_gen': 0.0, 'beta_pl': 1.0, 'beta_pg': 1.0, 'beta_ql': 1.0, 'beta_qg': 1.0
+                'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0.0, 'reactive_gen': 0.0, 'beta_pl': 1.0, 'beta_pg': 1.0, 'beta_ql': 1.0, 'beta_qg': 1.0
             }) for i in range(1, self._N+1)
         }
 
@@ -196,13 +196,14 @@ class GridTopologyBase(Network):
 
         # Compute the PAC parameters
         Phi = 1.8744
-        alpha = 0.005
+        alpha = 1.0
         L = 100
 
         GHat = (np.asarray(Gj_mats[j-1]) for j in range(1, self._N+1))
         GHat = block_diag(*GHat)
         A = tuple(np.asarray(Aj_mats[j-1]) for j in range(1, self._N+1))
         A = np.vstack(A)
+        self.A = A
         total = GHat.T@GHat + A.T@A
         eigs_PAC = np.linalg.eigvals(total).real
         sigmax_PAC = max(eigs_PAC)
@@ -284,5 +285,4 @@ class GridTopology3Node(GridTopologyBase):
 
 if __name__ == '__main__':
     grid = GridTopology3Node(riaps=False, verbose=True)
-    print(grid.graph.edges)
-    # print(grid._G)
+

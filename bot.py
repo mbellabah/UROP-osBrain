@@ -41,19 +41,18 @@ class Bot(Agent):
         self.is_init_y: bool = False
         self.is_init_nu_bar: bool = False
 
-        self.feasibility: List[float] = []
+        self.feasibility: List = []
         self.historical_trail = []
-        self.toggle = True
-        self._DEBUG = False
+        self._DEBUG = True
 
     # MARK: Communication
     def reply_to_request(self, request: dict) -> dict:      # When asked something, provide data on self
         """
-        :param request: {is_request: bool, data_type: str, sender: str}
+        :param request: {is_request: bool, data_type: str, sender: str, round: tuple}
         """
         if request['is_request']:
             request_data_type = request['data_type']
-            self.log_debug(f'Being asked for {request_data_type} by {request["sender"]}')
+            self.log_debug(f'({self.round_y},{self.round_nu_bar}): Being asked for {request_data_type} by {request["sender"]}: {request["round"]}')
             reply = self.compose_data_package(data_type=request_data_type)
             logger.info('Bot-{} was asked for {} by {}\ngiving: {}'.format(self.bot_id, request['data_type'], request['sender'], reply['payload']))
             return reply
@@ -79,7 +78,7 @@ class Bot(Agent):
         """
         Requests data_type from all neighbors
         """
-        request: dict = {'is_request': True, 'data_type': data_type, 'sender': self.name}
+        request: dict = {'is_request': True, 'data_type': data_type, 'sender': self.name, 'round': (self.round_y, self.round_nu_bar)}
         for j in self.neighbors:
             bot_name: str = f'Bot-{j}'
             self.log_debug(f'Requesting {data_type} from {bot_name}')
@@ -92,6 +91,7 @@ class Bot(Agent):
         if 'is_setup' in data_package:
             self.log_info('Received setup information')
             self.atom = Atom(atom_id=self.bot_id, node_data_package=data_package['data'])
+            self.historical_trail.append(self.atom.get_y())
 
     # MARK: Utility
     def compose_data_package(self, data_type: str) -> dict:
@@ -119,26 +119,23 @@ class Bot(Agent):
     def init_pac_nu_bar(self):
         self.request_all(data_type='nu_bar')
 
-    def run_pac(self, data_type: str = 'y'):
+    def run_pac_y(self):
         # Perform the updates
-        self.log_info(f'Round: {self.round_y}, {self.round_nu_bar}')
         self.feasibility.append(self.atom._Gj @ self.atom.get_y())
 
-        y_bool, nu_bar_bool = self.is_synchronized()
+        self.request_all(data_type='y')
 
-        # Check if y-round is synchronized
-        if data_type == 'y':
-            self.round_y += 1
+        y_bool, _ = self.is_synchronized()
+        if y_bool:
             self.atom.update_y_and_mu()
             self.historical_trail.append(self.atom.get_y())
-            self.request_all(data_type='y')
 
-        else:
-            self.round_nu_bar += 1
+    def run_pac_nu_bar(self):
+
+        _, nu_bar_bool = self.is_synchronized()
+        if nu_bar_bool:
             self.atom.update_nu()
             self.request_all(data_type='nu_bar')
-
-            # self.request_all(data_type='nu_bar')
 
     def periodic_pac(self, delta_t: float = 1):
         self.each(delta_t, 'run_pac', alias='periodic_pac')
@@ -210,12 +207,21 @@ class Main:
     def run(self, rounds: int = 10):
         self.setup_atoms()
 
-        # Aperiodic...
         for _ in range(rounds):
             for bot in self.bot_dict.values():
-                bot.run_pac(data_type='y')
+                bot.run_pac_y()
+
             for bot in self.bot_dict.values():
-                bot.run_pac(data_type='nu_bar')
+                bot.set_attr(**{'round_y': bot.get_attr('round_y') + 1})
+
+            for bot in self.bot_dict.values():
+                bot.run_pac_nu_bar()
+
+            for bot in self.bot_dict.values():
+                bot.set_attr(**{'round_nu_bar': bot.get_attr('round_nu_bar') + 1})
+
+        # for bot in self.bot_dict.values():
+        #     bot.periodic_pac(delta_t=0.5)
 
         flag = True
         while flag:
@@ -224,46 +230,80 @@ class Main:
                     flag = False
                     break
 
-        self.diagnostics()
+        self.diagnostics(rounds, historical_trail=True, feasibility=False, consistency=False)
         self.ns.shutdown()
 
-    def diagnostics(self):
+    def diagnostics(self, rounds: int, historical_trail=False, feasibility=False, consistency=False):
         # TODO: Fix bug here
-        # constraints feasibility
-        logging.info('-'*40)
-        logging.info('-'*40)
 
-        bot_feasibility: dict = {}
-        for bot_name, bot in self.bot_dict.items():
-            bot_feasibility[bot_name] = bot.get_attr('feasibility')
+        if feasibility:
+            # constraints feasibility
+            logging.info('-'*40)
+            logging.info('-'*40)
 
-        feasibility: List[float] = []
-        for i in range(len(bot_feasibility['Bot-1'])):
-            stacked_vector_tuple = ()
-            for bot_name, feasibility_vec in bot_feasibility.items():
-                stacked_vector_tuple += (feasibility_vec[i],)
+            bot_feasibility: dict = {}
+            for bot_name, bot in self.bot_dict.items():
+                bot_feasibility[bot_name] = bot.get_attr('feasibility')
 
-            stacked_vector: np.array = np.vstack(stacked_vector_tuple)
-            error: float = np.linalg.norm(stacked_vector)
-            feasibility.append(error)
+            feasibility_error: List[float] = []
+            for i in range(len(bot_feasibility['Bot-1'])):
+                stacked_vector_tuple = ()
+                for bot_name, feasibility_vec in bot_feasibility.items():
+                    stacked_vector_tuple += (feasibility_vec[i],)
 
-        plt.plot(feasibility)
-        plt.xlabel('round number')
+                stacked_vector: np.array = np.vstack(stacked_vector_tuple)
+                error: float = np.linalg.norm(stacked_vector)
+                feasibility_error.append(error)
 
-        logging.info('-'*40)
-        logging.info('-'*40)
+            feasibility_figure = plt.figure(1)
+            plt.plot(feasibility_error)
+            plt.xlabel('round number')
+            plt.title("Distance to Feasibility")
+            feasibility_figure.show()
 
+        if consistency:
+            logging.info('-'*40)
+            logging.info('-'*40)
+
+            # consistency
+            consistency_error: List[float] = []
+            for i in range(len(self.bot_dict['Bot-1'].get_attr('historical_trail'))):
+                stacked_y_vector_tuple = ()
+                for bot_name, bot in self.bot_dict.items():
+
+                    stacked_y_vector_tuple += (bot.get_attr('historical_trail')[i],)
+                stacked_y_vector: np.array = np.vstack(stacked_y_vector_tuple)
+                A = self.coordinator.get_attr('grid').A
+                error: float = np.linalg.norm(A@stacked_y_vector)
+                consistency_error.append(error)
+
+            consistency_figure = plt.figure(2)
+            plt.plot(consistency_error)
+            plt.xlabel('round number')
+            plt.title("Distance to Consistency")
+            consistency_figure.show()
+
+        # Print the final values to screen (stdout)
         for bot in self.bot_dict.values():
             print(bot.get_attr('atom').get_y(), "\n")
 
-        for _ in range(5):
-            logging.info('-'*40)
+        for _ in range(3):
+            print('-'*40)
 
-        for bot in self.bot_dict.values():
-            logging.info(f'{bot.get_attr("historical_trail")}\n')
+        if historical_trail:
+            # Print the trail
+            for k in range(rounds+1):
+                bot_y_k = ()
+                for bot in self.bot_dict.values():
+                    bot_y_k += (bot.get_attr("historical_trail")[k],)
+                bot_y_k = np.vstack(bot_y_k)
+                
+                print('Round', k)
+                print(bot_y_k, "\n")
+                print('-'*50)
 
         plt.show()
-
+        
 
 # TODO: (1) Think about the B-j (=Qmj) and how to make it "private"
 # TODO: (2) Metrics sourced in a distributed fashion {'feasibility' and 'consistency'} -- fixed num of iterations
