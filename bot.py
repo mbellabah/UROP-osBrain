@@ -225,11 +225,13 @@ class Main:
                     flag = False
                     break
 
-    def run_diagnostics(self, historical_trail='y', feasibility=False, consistency=False):
-        self.diagnostics(self.rounds, historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
+    def run_diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
+        self.diagnostics(historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
 
-    def diagnostics(self, rounds: int, historical_trail='', feasibility=False, consistency=False):
-        # TODO: Fix bug here
+    def diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
+
+        # granular: bool = self.rounds
+
 
         if feasibility:
             # constraints feasibility
@@ -241,7 +243,7 @@ class Main:
                 bot_feasibility[bot_name] = bot.get_attr('feasibility')
 
             feasibility_error: List[float] = []
-            for i in range(len(bot_feasibility['Bot-1'])):
+            for i in range(self.rounds):
                 stacked_vector_tuple = ()
                 for bot_name, feasibility_vec in bot_feasibility.items():
                     stacked_vector_tuple += (feasibility_vec[i],)
@@ -284,9 +286,9 @@ class Main:
         for _ in range(3):
             print('-'*40)
 
-        if historical_trail:
+        if historical_trail in ['y', 'nu']:
             # Print the trail
-            for k in range(rounds+1):
+            for k in range(self.rounds+1):
                 bot_y_k = ()
                 bot_nu_k = ()
 
