@@ -8,7 +8,7 @@ from osbrain import run_agent
 from osbrain import run_nameserver
 from osbrain import Agent
 
-from libs.network import GridTopology3Node
+from libs.network import GridTopology3Node, GridTopology10Node
 from libs.atom import Atom
 
 from libs.config.helper import  col_print, print_final
@@ -152,8 +152,8 @@ class Coordinator(Agent):
         self.grid = None
 
     def init_environment(self):
-        self.grid = GridTopology3Node()
-        for j in range(1, self.grid.num_nodes()+1):
+        # self.grid = GridTopology10Node  # GridTopology3Node()     # FIXME
+        for j in range(1, self.grid._N+1):
             atom_data_package = self.grid.graph.node(data=True)[j]
             data_package = {'is_setup': True, 'data': atom_data_package}
 
@@ -178,8 +178,15 @@ class Main:
         for i in range(1, num_bots+1):
             self.bot_dict[f'Bot-{i}'] = run_agent(f'Bot-{i}', base=Bot)
 
-    def setup_atoms(self):
+    def setup_atoms(self, grid: int = 3):
         # Connect the bots to the coordinator, then to each other
+        if grid == 3:
+            self.coordinator.set_attr(**{'grid': GridTopology3Node()})
+        elif grid == 10:
+            self.coordinator.set_attr(**{'grid': GridTopology10Node()})
+        else:
+            raise Exception("Must define a network topology!")
+
         for bot_name_a, bot_a in self.bot_dict.items():
             coordinator_addr = self.coordinator.addr(COORDINATOR_CHANNEL)
             bot_a.connect(coordinator_addr, handler={bot_name_a: 'receive_setup'})
@@ -197,8 +204,8 @@ class Main:
         for bot in self.bot_dict.values():
             bot.init_pac_nu_bar()
 
-    def run(self, rounds: int = 10):
-        self.setup_atoms()
+    def run(self, rounds: int = 10, grid: int = 3):
+        self.setup_atoms(grid)
         self.rounds = rounds
 
         for i in range(self.rounds):
