@@ -15,9 +15,9 @@ def run_diagnostics(historical_trail='y', feasibility=False, consistency=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('round', type=int, help='number of iterations')
-    parser.add_argument('-feasibility', type=bool, default=False, help='whether to plot the feasibility')
-    parser.add_argument('-consistency', type=bool, default=False, help='whether to plot the consistency')
-    parser.add_argument('-historical_trail', type=str, default='na', help='show the trail of either y or nu')
+    parser.add_argument('-f', action='store_true', dest='feasibility', help='whether to plot the feasibility')
+    parser.add_argument('-c', action='store_true', dest='consistency', help='whether to plot the consistency')
+    parser.add_argument('-historical_trail', type=str, help='show the trail of either y or nu')
     args = parser.parse_args()
 
     rounds = args.round

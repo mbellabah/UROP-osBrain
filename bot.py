@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from typing import Dict, Tuple, List
 import matplotlib.pyplot as plt
@@ -200,7 +201,10 @@ class Main:
         self.setup_atoms()
         self.rounds = rounds
 
-        for _ in range(self.rounds):
+        for i in range(self.rounds):
+            sys.stdout.write("Round progress: %d/%i   \r" % (i, self.rounds))
+            sys.stdout.flush()
+
             for bot in self.bot_dict.values():
                 bot.run_pac_y()
 
@@ -252,11 +256,10 @@ class Main:
                 error: float = np.linalg.norm(stacked_vector)
                 feasibility_error.append(error)
 
-            feasibility_figure = plt.figure(1)
-            plt.plot(feasibility_error)
+            feasibility_figure = plt.subplot(1, 2, 1)
             plt.xlabel('round number')
             plt.title("Distance to Feasibility")
-            feasibility_figure.show()
+            plt.plot(feasibility_error)
 
         if consistency:
             # consistency
@@ -270,11 +273,10 @@ class Main:
                 error: float = np.linalg.norm(A@stacked_y_vector)
                 consistency_error.append(error)
 
-            consistency_figure = plt.figure(2)
-            plt.plot(consistency_error)
+            consistency_figure = plt.subplot(1, 2, 2)
             plt.xlabel('round number')
             plt.title("Distance to Consistency")
-            consistency_figure.show()
+            plt.plot(consistency_error)
 
         if historical_trail in ['y', 'nu']:
             # Print the trail
