@@ -42,8 +42,11 @@ class Bot(Agent):
         self.is_init_nu_bar: bool = False
 
         self.feasibility: List = []
-        self.historical_trail = []
-        self._DEBUG = True
+
+        self.historical_trail_y = []
+        self.historical_trail_nu = []
+
+        self._DEBUG = False
 
     # MARK: Communication
     def reply_to_request(self, request: dict) -> dict:      # When asked something, provide data on self
@@ -91,7 +94,7 @@ class Bot(Agent):
         if 'is_setup' in data_package:
             self.log_info('Received setup information')
             self.atom = Atom(atom_id=self.bot_id, node_data_package=data_package['data'])
-            self.historical_trail.append(self.atom.get_y())
+            self.historical_trail_y.append(self.atom.get_y())
 
     # MARK: Utility
     def compose_data_package(self, data_type: str) -> dict:
@@ -115,6 +118,7 @@ class Bot(Agent):
     def init_pac_y(self):
         self.request_all(data_type='y')
         self.atom.init_dual_vars()
+        self.historical_trail_nu.append(self.atom.nu)
 
     def init_pac_nu_bar(self):
         self.request_all(data_type='nu_bar')
@@ -122,20 +126,15 @@ class Bot(Agent):
     def run_pac_y(self):
         # Perform the updates
         self.feasibility.append(self.atom._Gj @ self.atom.get_y())
-
         self.request_all(data_type='y')
 
-        y_bool, _ = self.is_synchronized()
-        if y_bool:
-            self.atom.update_y_and_mu()
-            self.historical_trail.append(self.atom.get_y())
+        self.atom.update_y_and_mu()
+        self.historical_trail_y.append(self.atom.get_y())
 
     def run_pac_nu_bar(self):
-
-        _, nu_bar_bool = self.is_synchronized()
-        if nu_bar_bool:
-            self.atom.update_nu()
-            self.request_all(data_type='nu_bar')
+        self.request_all(data_type='nu_bar')
+        self.atom.update_nu()
+        self.historical_trail_nu.append(self.atom.nu)
 
     def periodic_pac(self, delta_t: float = 1):
         self.each(delta_t, 'run_pac', alias='periodic_pac')
@@ -178,6 +177,7 @@ class Coordinator(Agent):
 class Main:
     def __init__(self, num_bots: int):
         self.bot_dict = {}
+        self.rounds = 0
 
         # System deployment
         self.ns = run_nameserver()
@@ -206,8 +206,9 @@ class Main:
 
     def run(self, rounds: int = 10):
         self.setup_atoms()
+        self.rounds = rounds
 
-        for _ in range(rounds):
+        for _ in range(self.rounds):
             for bot in self.bot_dict.values():
                 bot.run_pac_y()
 
@@ -230,10 +231,10 @@ class Main:
                     flag = False
                     break
 
-        self.diagnostics(rounds, historical_trail=True, feasibility=False, consistency=False)
+        self.diagnostics(rounds, historical_trail='y', feasibility=False, consistency=False)
         self.ns.shutdown()
 
-    def diagnostics(self, rounds: int, historical_trail=False, feasibility=False, consistency=False):
+    def diagnostics(self, rounds: int, historical_trail='', feasibility=False, consistency=False):
         # TODO: Fix bug here
 
         if feasibility:
@@ -267,11 +268,10 @@ class Main:
 
             # consistency
             consistency_error: List[float] = []
-            for i in range(len(self.bot_dict['Bot-1'].get_attr('historical_trail'))):
+            for i in range(self.rounds):
                 stacked_y_vector_tuple = ()
                 for bot_name, bot in self.bot_dict.items():
-
-                    stacked_y_vector_tuple += (bot.get_attr('historical_trail')[i],)
+                    stacked_y_vector_tuple += (bot.get_attr('historical_trail_y')[i],)
                 stacked_y_vector: np.array = np.vstack(stacked_y_vector_tuple)
                 A = self.coordinator.get_attr('grid').A
                 error: float = np.linalg.norm(A@stacked_y_vector)
@@ -294,12 +294,22 @@ class Main:
             # Print the trail
             for k in range(rounds+1):
                 bot_y_k = ()
+                bot_nu_k = ()
+
                 for bot in self.bot_dict.values():
-                    bot_y_k += (bot.get_attr("historical_trail")[k],)
+                    bot_y_k += (bot.get_attr("historical_trail_y")[k],)
+                    bot_nu_k += (bot.get_attr("historical_trail_nu")[k],)
+
                 bot_y_k = np.vstack(bot_y_k)
-                
+                bot_nu_k = np.vstack(bot_nu_k)
+
                 print('Round', k)
-                print(bot_y_k, "\n")
+
+                if historical_trail == 'y':
+                    print(bot_y_k, "\n")
+                elif historical_trail == 'nu':
+                    print(bot_nu_k, "\n")
+
                 print('-'*50)
 
         plt.show()

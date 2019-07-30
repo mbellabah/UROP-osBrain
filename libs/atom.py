@@ -54,8 +54,8 @@ class Atom(object):
         return np.vstack(nu_bar_tuple)
 
     def init_dual_vars(self):
-        self.mu: np.array = np.zeros_like(self._rho * self._gamma * self._Gj @ self._y)
-        self.mu_bar: np.array = self.mu + self._rho * self._gamma * self._Gj @ self._y
+        self.mu: np.array = np.zeros_like(self._rho * self._gamma * self._Gj @ self.get_y())
+        self.mu_bar: np.array = self.mu + self._rho * self._gamma * self._Gj @ self.get_y()
 
         global_y_mat: np.array = self._Aj @ self.get_global_y()
 
@@ -69,7 +69,7 @@ class Atom(object):
     def cost_function(self, var):
         xi = 1.0        # FIXME: Integrate with Network Grid topo
 
-        gen_cost: float = 0.0
+        gen_cost = 0.0
         load_util = 0.0
         loss = 0.0
 
@@ -82,6 +82,7 @@ class Atom(object):
             QG: float = var[3]
 
             gen_cost: float = beta_pg*PG + beta_qg*QG
+
         else:
             # yj = [Pij, Qij, lij, PLj, PGj, QLj, QGj, vj, {vi}] (end node) OR
             # yj = [Pij, Qij, Lij, PLj, PGj, QLj, QGj, vj, {vi, Pjk, Qjk, . . .}] ('middle' node)
@@ -92,8 +93,8 @@ class Atom(object):
             QL: float = var[5]
             Lij: float = var[2]       # the current flow on the upstream line
 
-            gen_cost: float = self._beta_pg*cp.square(PG - self._PG[0]) + self._beta_qg*cp.square(QG - self._QG[0])
-            load_util: float = self._beta_pl*cp.square(PL - self._PL[1]) + self._beta_ql*cp.square(QL - self._QL[1])
+            gen_cost: float = self._beta_pg*(PG - self._PG[0])**2 + self._beta_qg*(QG - self._QG[0])**2
+            load_util: float = self._beta_pl*(PL - self._PL[1])**2 + self._beta_ql*(QL - self._QL[1])**2
 
             parent_node: int = int(self._parent_node)
             upstream_line_resistance: float = self._neighbors[parent_node]['resistance']
@@ -110,64 +111,16 @@ class Atom(object):
         total = self.get_global_nu_bar().T@Qmj@var
         return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self._rho)*cp.norm(var-self.get_y())**2)
 
-    # def _cost_function(self, var):
-    #     xi = 1.0  # FIXME: Integrate with Network Grid topo
-    #
-    #     gen_cost: float = 0.0
-    #     load_util = 0.0
-    #     loss = 0.0
-    #
-    #     if self._bus_type == 'feeder':
-    #         # yj = [PLj, PGj, QLj, QGj, vj, {Pjh, Qjh}]
-    #         beta_pg = 1
-    #         beta_qg = 1
-    #
-    #         PG: float = var[1]
-    #         QG: float = var[3]
-    #
-    #         gen_cost: float = beta_pg * PG + beta_qg * QG
-    #     else:
-    #         # yj = [Pij, Qij, lij, PLj, PGj, QLj, QGj, vj, {vi}] (end node) OR
-    #         # yj = [Pij, Qij, Lij, PLj, PGj, QLj, QGj, vj, {vi, Pjk, Qjk, . . .}] ('middle' node)
-    #
-    #         PG: float = var[4]
-    #         QG: float = var[6]
-    #         PL: float = var[3]
-    #         QL: float = var[5]
-    #         Lij: float = var[2]  # the current flow on the upstream line
-    #
-    #         gen_cost: float = self._beta_pg * np.square(PG - self._PG[0]) + self._beta_qg * np.square(QG - self._QG[0])
-    #         load_util: float = self._beta_pl * np.square(PL - self._PL[1]) + self._beta_ql * np.square(QL - self._QL[1])
-    #
-    #         parent_node: int = int(self._parent_node)
-    #         upstream_line_resistance: float = self._neighbors[parent_node]['resistance']
-    #         loss: float = xi * upstream_line_resistance * Lij
-    #
-    #     return gen_cost + load_util + loss
-
-    # def _atomic_objective_function(self, var):
-    #     qmj_tuple = ()
-    #     for m in range(self._global_num_nodes):
-    #         qmj_tuple += (self._Qmj[m][0][self.atom_id-1],)     # because indexing of atom starts at 1
-    #     Qmj = np.vstack(qmj_tuple)
-    #
-    #     total = self.get_global_nu_bar().T@Qmj@var
-    #
-    #     return self._cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self._rho)*np.linalg.norm(var-self.get_y())**2)
-
     def solve_atomic_objective_function(self) -> np.array:
         parent_node: int = int(self._parent_node)
         upstream_line_thermal_limit: float = self._neighbors[parent_node]['thermal_limit']
-
-        # print(f"{self.atom_id}::: HEY HEY HEY::: {self._atomic_objective_function(var=np.ones_like(self.get_y()))}")
-
         return atomic_solve(self.atomic_objective_function, self._y.shape, Bj=self._Bj, bj=self._bj, bus_type=self._bus_type, thermal_limit=upstream_line_thermal_limit)
 
     def update_y_and_mu(self):
         try:
             self._y: np.array = self.solve_atomic_objective_function()
             # update mu
-            mat_product: np.array = self._Gj @ self._y
+            mat_product: np.array = self._Gj @ self.get_y()
             self.mu += self._rho * self._gamma * mat_product
             self.mu_bar = self.mu + self._rho * self._gamma * mat_product
 
@@ -180,7 +133,7 @@ class Atom(object):
 
     def update_nu(self):
         mat_product: np.array = self._Aj @ self.get_global_y()
-        # print("\n")
+        # update nu
         self.nu += self._rho * self._gamma * mat_product
         self.nu_bar = self.nu + self._rho * self._gamma * mat_product
 

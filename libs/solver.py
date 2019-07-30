@@ -118,7 +118,6 @@ def atomic_solve(optimize_equation_func, a_shape: tuple, Bj: np.array, bj: np.ar
     model_problem.solve(solver=SOLVER, verbose=False)
 
     # print(f'status: {model_problem.status}\noptimal value: {model_problem.value}\noptimal var: {candidate_a.value}\n')
-
     return np.asarray(candidate_a.value)
 
 

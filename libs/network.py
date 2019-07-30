@@ -145,12 +145,6 @@ class GridTopologyBase(Network):
         self._N = np.int(self._N)
 
     def setup(self):
-        # _nodes: Dict[Tuple[int, dict]] = {
-        #     i: (i, {
-        #         'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0, 'reactive_gen': 0.0, 'beta_pl': 3*np.random.rand()+2, 'beta_pg': np.random.rand()+2, 'beta_ql': 3*np.random.rand()+2, 'beta_qg': 3*np.random.rand()+2
-        #     }) for i in range(1, self._N+1)
-        # }
-
         _nodes: Dict[Tuple[int, dict]] = {
             i: (i, {
                 'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0.0, 'reactive_gen': 0.0, 'beta_pl': 1.0, 'beta_pg': 1.0, 'beta_ql': 1.0, 'beta_qg': 1.0
@@ -226,9 +220,10 @@ class GridTopologyBase(Network):
             y_num_elements: int = 0       # the number of vars/elements for the given node's y vector
 
             self.set_node_attribute(j, 'Aj', Aj_mats[i])
-            self.set_node_attribute(j, 'bj', np.array(b_vecs[i][:,0]).reshape((-1,1)))
+            self.set_node_attribute(j, 'bj', np.array(b_vecs[i][:, 0]).reshape((-1, 1)))
             self.set_node_attribute(j, 'Bj', Bj_mats[i])
             self.set_node_attribute(j, 'Gj', Gj_mats[i])
+            print(Gj_mats[i])
             self.set_node_attribute(j, 'Qmj', Qmj_mats)     # TODO: Make correct getter
 
             self.set_node_attribute(j, 'PL', (self.PLLow[i], self.PLUpp[i]))
@@ -285,4 +280,5 @@ class GridTopology3Node(GridTopologyBase):
 
 if __name__ == '__main__':
     grid = GridTopology3Node(riaps=False, verbose=True)
+    print(grid.graph.nodes(data=False))
 
