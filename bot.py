@@ -1,6 +1,3 @@
-import time
-import logging
-import threading
 import numpy as np
 from typing import Dict, Tuple, List
 import matplotlib.pyplot as plt
@@ -18,9 +15,6 @@ from libs.config.helper import  col_print, print_final
 
 # MARK: Channels
 COORDINATOR_CHANNEL = 'coordinator'
-
-logger = logging.getLogger('bot')
-logging.basicConfig(level=logging.DEBUG, filename="logfile", filemode="w+", format="%(asctime)-15s %(message)s")
 
 osbrain.config['TRANSPORT'] = 'ipc'
 
@@ -59,7 +53,6 @@ class Bot(Agent):
             request_data_type = request['data_type']
             self.log_debug(f'({self.round_y},{self.round_nu_bar}): Being asked for {request_data_type} by {request["sender"]}: {request["round"]}')
             reply = self.compose_data_package(data_type=request_data_type)
-            logger.info('Bot-{} was asked for {} by {}\ngiving: {}'.format(self.bot_id, request['data_type'], request['sender'], reply['payload']))
             return reply
 
     def process_reply(self, response: dict):     # After request, how to process the subsequent reply
@@ -245,9 +238,6 @@ class Main:
 
         if feasibility:
             # constraints feasibility
-            logging.info('-'*40)
-            logging.info('-'*40)
-
             bot_feasibility: dict = {}
             for bot_name, bot in self.bot_dict.items():
                 bot_feasibility[bot_name] = bot.get_attr('feasibility')
@@ -269,9 +259,6 @@ class Main:
             feasibility_figure.show()
 
         if consistency:
-            logging.info('-'*40)
-            logging.info('-'*40)
-
             # consistency
             consistency_error: List[float] = []
             for i in range(self.rounds):
