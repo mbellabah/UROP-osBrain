@@ -126,18 +126,15 @@ class Bot(Agent):
     def run_pac_y(self):
         # Perform the updates
         self.feasibility.append(self.atom._Gj @ self.atom.get_y())
-        self.request_all(data_type='y')
 
         self.atom.update_y_and_mu()
         self.historical_trail_y.append(self.atom.get_y())
+        self.request_all(data_type='nu_bar')
 
     def run_pac_nu_bar(self):
-        self.request_all(data_type='nu_bar')
+        self.request_all(data_type='y')
         self.atom.update_nu()
         self.historical_trail_nu.append(self.atom.nu)
-
-    def periodic_pac(self, delta_t: float = 1):
-        self.each(delta_t, 'run_pac', alias='periodic_pac')
 
     def is_synchronized(self) -> Tuple[bool, bool]:
         y_bool: bool = True
@@ -220,9 +217,6 @@ class Main:
 
             for bot in self.bot_dict.values():
                 bot.set_attr(**{'round_nu_bar': bot.get_attr('round_nu_bar') + 1})
-
-        # for bot in self.bot_dict.values():
-        #     bot.periodic_pac(delta_t=0.5)
 
         flag = True
         while flag:

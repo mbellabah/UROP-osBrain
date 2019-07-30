@@ -223,7 +223,6 @@ class GridTopologyBase(Network):
             self.set_node_attribute(j, 'bj', np.array(b_vecs[i][:, 0]).reshape((-1, 1)))
             self.set_node_attribute(j, 'Bj', Bj_mats[i])
             self.set_node_attribute(j, 'Gj', Gj_mats[i])
-            print(Gj_mats[i])
             self.set_node_attribute(j, 'Qmj', Qmj_mats)     # TODO: Make correct getter
 
             self.set_node_attribute(j, 'PL', (self.PLLow[i], self.PLUpp[i]))

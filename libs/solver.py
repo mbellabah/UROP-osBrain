@@ -81,35 +81,17 @@ def atomic_solve(optimize_equation_func, a_shape: tuple, Bj: np.array, bj: np.ar
     if bus_type != 'feeder':
         """
         (eq. 1) Pij^2 + Qij^2 - Sij <= 0 
-        (eq. 2) Pij^2 + Qij^2 - vi*Lij <= 0 
-        
-        e.g. for candidate_a: (9x1) -- [x0, x1, x2 . . . x8] which maps to [Pij, Qij, Lij, . . .]
-        We'd like standard form candidate_a.T @ A @ candidate_a = (eq.1, eq.2) 
-        We've found that A = 
-        1 . . .
-        0 1 . . . . 
-        .
-        .
-        .
-        .
-        .
-        .
-        . . -1 . . .
-        Where the A: (9x9) will give x0^2 + x2^2 - x8*x2 
-        
-        note that cvxpy quad_form(x, P) is an alias for x.T @ P @ x 
+        (eq. 2) Pij^2 + Qij^2 - vi*Lij <= 0  
         """
         n = a_shape[0]
         A = np.zeros(shape=(n, n))
         A[0, 0] = 1.0
         A[1, 1] = 1.0
         mat_product = A@candidate_a         # [Pij, Qij, 0, ...]
-        """
-        quad_over_lin(x, y) = sum_i (x_i)^2 <= y 
-        """
+
         quad_constraints = [
             cp.quad_over_lin(mat_product, candidate_a[8]) <= candidate_a[2],
-            cp.quad_over_lin(mat_product, thermal_limit) <= thermal_limit
+            cp.sum_squares(mat_product) <= thermal_limit**2
         ]
 
     constraints = [Bj@candidate_a <= bj] + quad_constraints
