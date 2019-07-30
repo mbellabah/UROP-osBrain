@@ -238,7 +238,7 @@ class Main:
         self.diagnostics(historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
 
     def diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
-        granular: int = 5 if self.rounds > 5 else 1      # will plot every granular <int>
+        granular: int = 3 if self.rounds > 80 else 1      # will plot every granular <int>
 
         if feasibility:
             # constraints feasibility
@@ -246,59 +246,69 @@ class Main:
             for bot_name, bot in self.bot_dict.items():
                 bot_feasibility[bot_name] = bot.get_attr('feasibility')
 
+            x = []
             feasibility_error: List[float] = []
             for i in range(self.rounds):
-                stacked_vector_tuple = ()
-                for bot_name, feasibility_vec in bot_feasibility.items():
-                    stacked_vector_tuple += (feasibility_vec[i],)
+                if i % granular == 0:
+                    stacked_vector_tuple = ()
+                    for bot_name, feasibility_vec in bot_feasibility.items():
+                        stacked_vector_tuple += (feasibility_vec[i],)
 
-                stacked_vector: np.array = np.vstack(stacked_vector_tuple)
-                error: float = np.linalg.norm(stacked_vector)
-                feasibility_error.append(error)
+                    stacked_vector: np.array = np.vstack(stacked_vector_tuple)
+                    error: float = np.linalg.norm(stacked_vector)
+                    feasibility_error.append(error)
 
-            feasibility_figure = plt.subplot(1, 2, 1)
+                    x.append(i)
+
+            plt.subplot(1, 2, 1)
             plt.xlabel('round number')
             plt.title("Distance to Feasibility")
-            plt.plot(feasibility_error)
+            plt.plot(x, feasibility_error)
 
         if consistency:
             # consistency
+            x = []
             consistency_error: List[float] = []
             for i in range(self.rounds):
-                stacked_y_vector_tuple = ()
-                for bot_name, bot in self.bot_dict.items():
-                    stacked_y_vector_tuple += (bot.get_attr('historical_trail_y')[i],)
-                stacked_y_vector: np.array = np.vstack(stacked_y_vector_tuple)
-                A = self.coordinator.get_attr('grid').A
-                error: float = np.linalg.norm(A@stacked_y_vector)
-                consistency_error.append(error)
+                if i % granular == 0:
+                    stacked_y_vector_tuple = ()
+                    for bot_name, bot in self.bot_dict.items():
+                        stacked_y_vector_tuple += (bot.get_attr('historical_trail_y')[i],)
 
-            consistency_figure = plt.subplot(1, 2, 2)
+                    stacked_y_vector: np.array = np.vstack(stacked_y_vector_tuple)
+                    A = self.coordinator.get_attr('grid').A
+                    error: float = np.linalg.norm(A@stacked_y_vector)
+                    consistency_error.append(error)
+
+                    x.append(i)
+
+            plt.subplot(1, 2, 2)
             plt.xlabel('round number')
             plt.title("Distance to Consistency")
             plt.plot(consistency_error)
 
         if historical_trail in ['y', 'nu']:
             # Print the trail
-            for k in range(0, self.rounds+1, granular):
-                bot_y_k = ()
-                bot_nu_k = ()
+            for k in range(self.rounds+1):
+                if k % granular == 0:
+                    bot_y_k = ()
+                    bot_nu_k = ()
 
-                for bot in self.bot_dict.values():
-                    bot_y_k += (bot.get_attr("historical_trail_y")[k],)
-                    bot_nu_k += (bot.get_attr("historical_trail_nu")[k],)
+                    for bot in self.bot_dict.values():
+                        bot_y_k += (bot.get_attr("historical_trail_y")[k],)
+                        bot_nu_k += (bot.get_attr("historical_trail_nu")[k],)
 
-                bot_y_k = np.vstack(bot_y_k)
-                bot_nu_k = np.vstack(bot_nu_k)
+                    bot_y_k = np.vstack(bot_y_k)
+                    bot_nu_k = np.vstack(bot_nu_k)
 
-                print('Round', k)
+                    print('Round', k)
 
-                if historical_trail == 'y':
-                    print(bot_y_k, "\n")
-                elif historical_trail == 'nu':
-                    print(bot_nu_k, "\n")
+                    if historical_trail == 'y':
+                        print(bot_y_k, "\n")
+                    elif historical_trail == 'nu':
+                        print(bot_nu_k, "\n")
 
-                print('-'*50)
+                    print('-'*50)
 
         plt.show()
         
