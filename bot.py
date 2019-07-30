@@ -238,7 +238,7 @@ class Main:
         self.diagnostics(historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
 
     def diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
-        granular: int = 3 if self.rounds > 80 else 1      # will plot every granular <int>
+        de_granular: int = 3 if self.rounds > 100 else 1      # will plot every granular <int>
 
         if feasibility:
             # constraints feasibility
@@ -249,7 +249,7 @@ class Main:
             x = []
             feasibility_error: List[float] = []
             for i in range(self.rounds):
-                if i % granular == 0:
+                if i % de_granular == 0:
                     stacked_vector_tuple = ()
                     for bot_name, feasibility_vec in bot_feasibility.items():
                         stacked_vector_tuple += (feasibility_vec[i],)
@@ -270,7 +270,7 @@ class Main:
             x = []
             consistency_error: List[float] = []
             for i in range(self.rounds):
-                if i % granular == 0:
+                if i % de_granular == 0:
                     stacked_y_vector_tuple = ()
                     for bot_name, bot in self.bot_dict.items():
                         stacked_y_vector_tuple += (bot.get_attr('historical_trail_y')[i],)
@@ -290,7 +290,7 @@ class Main:
         if historical_trail in ['y', 'nu']:
             # Print the trail
             for k in range(self.rounds+1):
-                if k % granular == 0:
+                if k % de_granular == 0:
                     bot_y_k = ()
                     bot_nu_k = ()
 

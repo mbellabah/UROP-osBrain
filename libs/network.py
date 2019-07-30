@@ -277,6 +277,18 @@ class GridTopology3Node(GridTopologyBase):
         super(GridTopology3Node, self).__init__(load_mat=load_mat, verbose=verbose)
 
 
+class GridTopology10Node(GridTopologyBase):
+    def __init__(self, riaps: bool = True, verbose: bool = False):
+        self.xi: float = 1.0
+        self.feeder_cost = 1.0
+        if riaps:
+            load_mat: str = f'{os.getcwd()}/libs/config/GridTopo10Node.mat'
+        else:
+            load_mat: str = 'config/GridTopo10Node.mat'
+
+        super(GridTopology10Node, self).__init__(load_mat=load_mat, verbose=verbose)
+
+
 if __name__ == '__main__':
     grid = GridTopology3Node(riaps=False, verbose=True)
     print(grid.graph.nodes(data=False))

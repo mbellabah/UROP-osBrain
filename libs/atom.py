@@ -122,17 +122,17 @@ class Atom(object):
     def update_y_and_mu(self):
         try:
             self._y: np.array = self.solve_atomic_objective_function()
-            # update mu
-            mat_product: np.array = self._Gj @ self.get_y()
-            self.mu = self.mu + self._rho * self._gamma * mat_product
-            self.mu_bar = self.mu + self._rho * self._gamma * mat_product
-
-            # update my y that exists in the global dict
-            self.global_atom_y[self.atom_id] = self._y
-
         except ValueError as e:
             print('Could not solve for y')
             raise e
+
+        # update mu
+        mat_product: np.array = self._Gj @ self.get_y()
+        self.mu = self.mu + self._rho * self._gamma * mat_product
+        self.mu_bar = self.mu + self._rho * self._gamma * mat_product
+
+        # update my y that exists in the global dict
+        self.global_atom_y[self.atom_id] = self._y
 
     def update_nu(self):
         mat_product: np.array = self._Aj @ self.get_global_y()

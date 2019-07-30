@@ -1,3 +1,4 @@
+import numpy as np
 import argparse
 from bot import Main
 from libs.config.helper import timeit
@@ -13,6 +14,8 @@ def run_diagnostics(historical_trail='y', feasibility=False, consistency=False):
 
 
 if __name__ == '__main__':
+    np.set_printoptions(precision=5)
+
     parser = argparse.ArgumentParser()
     parser.add_argument('round', type=int, help='number of iterations')
     parser.add_argument('-f', action='store_true', dest='feasibility', help='whether to plot the feasibility')
