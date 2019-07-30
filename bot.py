@@ -13,6 +13,8 @@ from osbrain import Agent
 from libs.network import GridTopology3Node
 from libs.atom import Atom
 
+from libs.config.helper import  col_print, print_final
+
 
 # MARK: Channels
 COORDINATOR_CHANNEL = 'coordinator'
@@ -226,12 +228,20 @@ class Main:
                     break
 
     def run_diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
+        # Print the final values to screen (stdout)
+        # Some pretty printing stuff
+        print_final(self.rounds)
+
+        for bot in self.bot_dict.values():
+            bot_name = f'Bot-{bot.get_attr("bot_id")}'
+            final_vector = bot.get_attr('atom').get_y()
+            col_print(bot_name, final_vector)
+        print('#'*31)
+
         self.diagnostics(historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
 
     def diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
-
-        # granular: bool = self.rounds
-
+        granular: int = 5 if self.rounds > 5 else 1      # will plot every granular <int>
 
         if feasibility:
             # constraints feasibility
@@ -279,16 +289,9 @@ class Main:
             plt.title("Distance to Consistency")
             consistency_figure.show()
 
-        # Print the final values to screen (stdout)
-        for bot in self.bot_dict.values():
-            print(bot.get_attr('atom').get_y(), "\n")
-
-        for _ in range(3):
-            print('-'*40)
-
         if historical_trail in ['y', 'nu']:
             # Print the trail
-            for k in range(self.rounds+1):
+            for k in range(0, self.rounds+1, granular):
                 bot_y_k = ()
                 bot_nu_k = ()
 
