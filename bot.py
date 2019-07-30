@@ -127,9 +127,9 @@ class Bot(Agent):
         # Perform the updates
         self.feasibility.append(self.atom._Gj @ self.atom.get_y())
 
+        self.request_all(data_type='nu_bar')
         self.atom.update_y_and_mu()
         self.historical_trail_y.append(self.atom.get_y())
-        self.request_all(data_type='nu_bar')
 
     def run_pac_nu_bar(self):
         self.request_all(data_type='y')
@@ -225,8 +225,8 @@ class Main:
                     flag = False
                     break
 
-        self.diagnostics(rounds, historical_trail='y', feasibility=False, consistency=False)
-        self.ns.shutdown()
+    def run_diagnostics(self, historical_trail='y', feasibility=False, consistency=False):
+        self.diagnostics(self.rounds, historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
 
     def diagnostics(self, rounds: int, historical_trail='', feasibility=False, consistency=False):
         # TODO: Fix bug here

@@ -49,6 +49,9 @@ class Atom(object):
     def get_nu_bar(self) -> np.array:
         return self.nu_bar
 
+    def get_nu(self) -> np.array:
+        return self.nu
+
     def get_global_nu_bar(self):
         nu_bar_tuple: Tuple[np.array] = tuple([self.global_atom_nu_bar[key] for key in sorted(self.global_atom_nu_bar)])
         return np.vstack(nu_bar_tuple)
@@ -109,7 +112,7 @@ class Atom(object):
         Qmj = np.vstack(qmj_tuple)
 
         total = self.get_global_nu_bar().T@Qmj@var
-        return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self._rho)*cp.norm(var-self.get_y())**2)
+        return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self._rho))*cp.sum_squares(var-self.get_y())
 
     def solve_atomic_objective_function(self) -> np.array:
         parent_node: int = int(self._parent_node)
@@ -121,7 +124,7 @@ class Atom(object):
             self._y: np.array = self.solve_atomic_objective_function()
             # update mu
             mat_product: np.array = self._Gj @ self.get_y()
-            self.mu += self._rho * self._gamma * mat_product
+            self.mu = self.mu + self._rho * self._gamma * mat_product
             self.mu_bar = self.mu + self._rho * self._gamma * mat_product
 
             # update my y that exists in the global dict
@@ -134,7 +137,7 @@ class Atom(object):
     def update_nu(self):
         mat_product: np.array = self._Aj @ self.get_global_y()
         # update nu
-        self.nu += self._rho * self._gamma * mat_product
+        self.nu = self.nu + self._rho * self._gamma * mat_product
         self.nu_bar = self.nu + self._rho * self._gamma * mat_product
 
         # update my belief of nu_bar
