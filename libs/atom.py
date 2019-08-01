@@ -8,6 +8,8 @@ class Atom(object):
     def __init__(self, atom_id: int, node_data_package: dict):
         self.atom_id = atom_id
         self.node_data_package = node_data_package
+        self.first_time: bool = True
+        self.previous_problem = None
 
         # set the attributes from the node data package
         for node_variable in self.node_data_package:
@@ -21,6 +23,11 @@ class Atom(object):
         # Later implement so don't have to broadcast to everyone
         self.global_atom_y: Dict[int, np.array] = {self.atom_id: self.get_y()}
         self.global_atom_nu_bar: Dict[int, np.array] = {}
+
+        qmj_tuple = ()
+        for m in range(self._global_num_nodes):
+            qmj_tuple += (self._Qmj[m][0][self.atom_id - 1],)  # because indexing of atom starts at 1
+        self._Qmj = np.vstack(qmj_tuple)
 
         # broadcast and receive to initialize things on the network - order
         '''
@@ -59,7 +66,6 @@ class Atom(object):
     def init_dual_vars(self):
         self.mu: np.array = np.zeros_like(self._rho * self._gamma * self._Gj @ self.get_y())
         self.mu_bar: np.array = self.mu + self._rho * self._gamma * self._Gj @ self.get_y()
-
         global_y_mat: np.array = self._Aj @ self.get_global_y()
 
         self.nu: np.array = np.zeros_like(self._rho * self._gamma * global_y_mat)
@@ -105,23 +111,27 @@ class Atom(object):
 
         return gen_cost + load_util + loss
 
-    def atomic_objective_function(self, var):
-        qmj_tuple = ()
-        for m in range(self._global_num_nodes):
-            qmj_tuple += (self._Qmj[m][0][self.atom_id-1],)     # because indexing of atom starts at 1
-        Qmj = np.vstack(qmj_tuple)
-
-        total = self.get_global_nu_bar().T@Qmj@var
-        return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self._rho))*cp.sum_squares(var-self.get_y())
+    # def atomic_objective_function(self, var):
+    #     total = self.get_global_nu_bar().T@self._Qmj@var
+    #     return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self._rho))*cp.sum_squares(var-self.get_y())
 
     def solve_atomic_objective_function(self) -> np.array:
         parent_node: int = int(self._parent_node)
         upstream_line_thermal_limit: float = self._neighbors[parent_node]['thermal_limit']
-        return atomic_solve(self.atomic_objective_function, self._y.shape, Bj=self._Bj, bj=self._bj, bus_type=self._bus_type, thermal_limit=upstream_line_thermal_limit)
+
+
+        params = {'global_nu_bar': (self.get_global_nu_bar().shape, self.get_global_nu_bar()), 'mu_bar': (self.mu_bar.shape, self.mu_bar), 'prev_y': (self.get_y().shape, self.get_y())}
+        if self.first_time:
+            var, self.previous_problem = atomic_solve(self.cost_function, self._y.shape, Gj=self._Gj, rho=self._rho, Qmj=self._Qmj, Bj=self._Bj, bj=self._bj, bus_type=self._bus_type, thermal_limit=upstream_line_thermal_limit, prev_params=params)
+        else:
+            var, _ = atomic_solve(self.cost_function, self._y.shape, Gj=self._Gj, rho=self._rho, Qmj=self._Qmj, Bj=self._Bj, bj=self._bj, bus_type=self._bus_type, thermal_limit=upstream_line_thermal_limit, previous_problem=self.previous_problem, prev_params=params)
+
+        return var
 
     def update_y_and_mu(self):
         try:
             self._y: np.array = self.solve_atomic_objective_function()
+            self.first_time = False         # we've successfuly done our first time!
         except ValueError as e:
             print('Could not solve for y')
             raise e

@@ -8,7 +8,7 @@ from osbrain import run_agent
 from osbrain import run_nameserver
 from osbrain import Agent
 
-from libs.network import GridTopology3Node, GridTopology10Node
+from libs.network import GridTopology3Node, GridTopology10Node, GridTopology26Node
 from libs.atom import Atom
 
 from libs.config.helper import  col_print, print_final
@@ -23,7 +23,7 @@ osbrain.config['TRANSPORT'] = 'ipc'
 # MARK: Classes
 class Bot(Agent):
     def on_init(self):
-        self.bind('PUB', alias=COORDINATOR_CHANNEL)
+        self.bind('SUB', alias=COORDINATOR_CHANNEL, handler='receive_setup')
         self.bind('REP', alias=self.name, handler='reply_to_request')
 
         self.bot_id: int = int(self.name[4:])
@@ -32,7 +32,7 @@ class Bot(Agent):
         self.round_y: int = 0
         self.round_nu_bar: int = 0
 
-        self.neighbors: list = list({1, 2, 3} - {self.bot_id})      # FIXME: list(self.atom_neighbor.keys())
+        self.neighbors: List = [None]
         self.neighbor_round: Dict[str, Tuple[int, int]] = {}
 
         self.is_init_y: bool = False
@@ -87,9 +87,10 @@ class Bot(Agent):
             self.process_reply(reply)
 
     def receive_setup(self, data_package: dict):
-        if 'is_setup' in data_package:
-            self.log_info('Received setup information')
+        if 'is_setup' in data_package and data_package['recipient'] == self.name:       # FIXME: Really weird bug where bot-1 receives bot-10's info as well
+            self.log_info(f'Received setup information, recipient: {data_package["recipient"]}')
             self.atom = Atom(atom_id=self.bot_id, node_data_package=data_package['data'])
+            self.neighbors = list(set([*range(1, self.atom._global_num_nodes+1)]) - {self.bot_id})   # FIXME: list(self.atom_neighbor.keys())
             self.historical_trail_y.append(self.atom.get_y())
 
     # MARK: Utility
@@ -155,8 +156,7 @@ class Coordinator(Agent):
         # self.grid = GridTopology10Node  # GridTopology3Node()     # FIXME
         for j in range(1, self.grid._N+1):
             atom_data_package = self.grid.graph.node(data=True)[j]
-            data_package = {'is_setup': True, 'data': atom_data_package}
-
+            data_package = {'is_setup': True, 'data': atom_data_package, 'recipient': f'Bot-{j}'}
             self.setup_bot(data_package=data_package, recipient=f'Bot-{j}')
 
     def setup_bot(self, data_package: dict, recipient: str):
@@ -184,6 +184,8 @@ class Main:
             self.coordinator.set_attr(**{'grid': GridTopology3Node()})
         elif grid == 10:
             self.coordinator.set_attr(**{'grid': GridTopology10Node()})
+        elif grid == 26:
+            self.coordinator.set_attr(**{'grid': GridTopology26Node()})
         else:
             raise Exception("Must define a network topology!")
 
