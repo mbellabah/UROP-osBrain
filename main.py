@@ -18,7 +18,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('round', type=int, help='number of iterations')
-    parser.add_argument('-grid', type=int, help='grid number')
+    parser.add_argument('-grid', default=3, type=int, help='grid number')
     parser.add_argument('-f', action='store_true', dest='feasibility', help='whether to plot the feasibility')
     parser.add_argument('-c', action='store_true', dest='consistency', help='whether to plot the consistency')
     parser.add_argument('-historical_trail', type=str, help='show the trail of either y or nu')

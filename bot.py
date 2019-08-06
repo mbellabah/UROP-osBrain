@@ -11,7 +11,7 @@ from osbrain import Agent
 from libs.network import GridTopology3Node, GridTopology10Node, GridTopology26Node
 from libs.atom import Atom
 
-from libs.config.helper import  col_print, print_final
+from libs.config.helper import col_print, print_final
 
 
 # MARK: Channels
@@ -133,18 +133,18 @@ class Bot(Agent):
         self.atom.update_nu()
         self.historical_trail_nu.append(self.atom.nu)
 
-    def is_synchronized(self) -> Tuple[bool, bool]:
-        y_bool: bool = True
-        nu_bar_bool: bool = True
-        for round_y, _ in self.neighbor_round.values():
-            if self.round_y != round_y:
-                y_bool = False
-                break
-        for _, round_nu_bar in self.neighbor_round.values():
-            if self.round_nu_bar != round_nu_bar:
-                nu_bar_bool = False
-                break
-        return y_bool, nu_bar_bool
+    # def is_synchronized(self) -> Tuple[bool, bool]:
+    #     y_bool: bool = True
+    #     nu_bar_bool: bool = True
+    #     for round_y, _ in self.neighbor_round.values():
+    #         if self.round_y != round_y:
+    #             y_bool = False
+    #             break
+    #     for _, round_nu_bar in self.neighbor_round.values():
+    #         if self.round_nu_bar != round_nu_bar:
+    #             nu_bar_bool = False
+    #             break
+    #     return y_bool, nu_bar_bool
 
 
 class Coordinator(Agent):
@@ -210,6 +210,8 @@ class Main:
         self.setup_atoms(grid)
         self.rounds = rounds
 
+        # Virtually synchronous execution -- all messages sent in a round, are received within the same round
+        #       note that the req-rep patterns also enforces message-passing be done in lockstep
         for i in range(self.rounds):
             sys.stdout.write("Round progress: %d/%i   \r" % (i, self.rounds))
             sys.stdout.flush()

@@ -1,6 +1,8 @@
 import numpy as np
 import cvxpy as cp
 
+from libs.config.helper import timeit
+
 SOLVER = cp.GUROBI
 
 
@@ -79,8 +81,7 @@ def cvx_py_example_1():
     print("optimal value", prob.value)
     print("optimal var", x.value, y.value)
 
-
-# @timeit
+@timeit
 def atomic_solve(cost_function, a_shape: tuple, Gj: np.array, rho: float, Qmj: np.array, Bj: np.array, bj: np.array, bus_type: str, thermal_limit: float, previous_problem=None, prev_params=None) -> np.array:
 
     if not previous_problem:

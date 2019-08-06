@@ -55,7 +55,7 @@ class Network(object):
     # MARK: Utility
     def render(self):
         import matplotlib.pyplot as plt
-        nx.draw(self.graph, with_labels=True, font_weight='bold')
+        nx.draw_kamada_kawai(self.graph, with_labels=True, font_weight='bold')
         plt.show()
 
     def num_nodes(self):
@@ -304,5 +304,5 @@ class GridTopology26Node(GridTopologyBase):
 if __name__ == '__main__':
     # grid = GridTopology3Node(riaps=False, verbose=True)
     grid = GridTopology10Node(riaps=False, verbose=True)
-    # print(grid.graph.nodes(data=False))
+    grid.render()
 

@@ -1,6 +1,5 @@
 from typing import Dict, Tuple
 import numpy as np
-import cvxpy as cp  # FIXME: Move this elsewhere!
 from libs.solver import atomic_solve
 
 
@@ -111,14 +110,9 @@ class Atom(object):
 
         return gen_cost + load_util + loss
 
-    # def atomic_objective_function(self, var):
-    #     total = self.get_global_nu_bar().T@self._Qmj@var
-    #     return self.cost_function(var) + self.mu_bar.T@self._Gj@var + total + (1/(2*self._rho))*cp.sum_squares(var-self.get_y())
-
     def solve_atomic_objective_function(self) -> np.array:
         parent_node: int = int(self._parent_node)
         upstream_line_thermal_limit: float = self._neighbors[parent_node]['thermal_limit']
-
 
         params = {'global_nu_bar': (self.get_global_nu_bar().shape, self.get_global_nu_bar()), 'mu_bar': (self.mu_bar.shape, self.mu_bar), 'prev_y': (self.get_y().shape, self.get_y())}
         if self.first_time:
