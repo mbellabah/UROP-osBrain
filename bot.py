@@ -255,7 +255,7 @@ class Main:
         self.diagnostics(historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
 
     def diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
-        de_granular: int = 3 if self.rounds > 100 else 1      # will plot every granular <int>
+        de_granular: int = 1 # 3 if self.rounds > 100 else 1      # will plot every granular <int>
 
         if feasibility:
             # constraints feasibility
@@ -280,6 +280,7 @@ class Main:
             plt.subplot(1, 2, 1)
             plt.xlabel('round number')
             plt.title("Distance to Feasibility")
+            plt.ylim([0, 1])
             plt.plot(x, feasibility_error)
 
         if consistency:
@@ -302,6 +303,7 @@ class Main:
             plt.subplot(1, 2, 2)
             plt.xlabel('round number')
             plt.title("Distance to Consistency")
+            plt.ylim([0, 1])
             plt.plot(consistency_error)
 
         if historical_trail in ['y', 'nu']:

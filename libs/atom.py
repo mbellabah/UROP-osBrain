@@ -20,10 +20,10 @@ class Atom(object):
         self.nu_bar = None
 
         self.adaptive_learning: bool = False
-        self._gamma_mu = self._gamma
-        self._gamma_nu = self._gamma
+        self._gamma_mu = 0          # self._gamma
+        self._gamma_nu = 0          # self._gamma
         self.round: int = 0         # round/iteration
-        self.epsilon = 1e-6
+        self.epsilon = 1e-8
 
         self.Gy_trajectory: list = []
         self.Ay_trajectory: list = []
@@ -154,8 +154,6 @@ class Atom(object):
             epsilon_identity = self.epsilon*np.identity(n)
             total = np.diag(1/np.sqrt(np.diag(epsilon_identity + diagonalized_H_round)))
 
-            print(self.atom_id, "HEY", self._gamma * total)
-
             PRODUCT = self._gamma * total @ mat_product
 
         self.mu_bar = self.mu + self._rho * PRODUCT
@@ -171,13 +169,14 @@ class Atom(object):
         PRODUCT = self._gamma * mat_product
         self.Ay_trajectory.append(mat_product)
 
-        if self.adaptive_learning:
-            H_round = sum([g@g.T for g in self.Ay_trajectory])
-            n = H_round.shape[0]
-            diagonalized_H_round = np.diag(np.diag(H_round))
-            epsilon_identity = self.epsilon*np.identity(n)
-            total = np.diag(1/np.sqrt(np.diag(epsilon_identity + diagonalized_H_round)))
-            PRODUCT = (self._gamma*total) @ mat_product
+        # if self.adaptive_learning:
+        #     H_round = sum([g@g.T for g in self.Ay_trajectory])
+        #     n = H_round.shape[0]
+        #     diagonalized_H_round = np.diag(np.diag(H_round))
+        #     epsilon_identity = self.epsilon*np.identity(n)
+        #     total = np.diag(1/np.sqrt(np.diag(epsilon_identity + diagonalized_H_round)))
+        #
+        #     PRODUCT = (self._gamma*total) @ mat_product
 
         self.nu_bar = self.nu + self._rho * PRODUCT
 
