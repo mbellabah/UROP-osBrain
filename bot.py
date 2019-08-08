@@ -90,6 +90,8 @@ class Bot(Agent):
         if 'is_setup' in data_package and data_package['recipient'] == self.name:       # FIXME: Really weird bug where bot-1 receives bot-10's info as well
             self.log_info(f'Received setup information, recipient: {data_package["recipient"]}')
             self.atom = Atom(atom_id=self.bot_id, node_data_package=data_package['data'])
+            self.atom.adaptive_learning = data_package['adaptive']
+
             self.neighbors = list(set([*range(1, self.atom._global_num_nodes+1)]) - {self.bot_id})   # FIXME: list(self.atom_neighbor.keys())
             self.historical_trail_y.append(self.atom.get_y())
 
@@ -133,6 +135,8 @@ class Bot(Agent):
         self.atom.update_nu()
         self.historical_trail_nu.append(self.atom.nu)
 
+        self.atom.round += 1
+
     # def is_synchronized(self) -> Tuple[bool, bool]:
     #     y_bool: bool = True
     #     nu_bar_bool: bool = True
@@ -151,12 +155,13 @@ class Coordinator(Agent):
     def on_init(self):
         self.bind('PUB', alias=COORDINATOR_CHANNEL)
         self.grid = None
+        self.adaptive = False
 
     def init_environment(self):
         # self.grid = GridTopology10Node  # GridTopology3Node()     # FIXME
         for j in range(1, self.grid._N+1):
             atom_data_package = self.grid.graph.node(data=True)[j]
-            data_package = {'is_setup': True, 'data': atom_data_package, 'recipient': f'Bot-{j}'}
+            data_package = {'is_setup': True, 'adaptive': self.adaptive, 'data': atom_data_package, 'recipient': f'Bot-{j}'}
             self.setup_bot(data_package=data_package, recipient=f'Bot-{j}')
 
     def setup_bot(self, data_package: dict, recipient: str):
@@ -178,7 +183,7 @@ class Main:
         for i in range(1, num_bots+1):
             self.bot_dict[f'Bot-{i}'] = run_agent(f'Bot-{i}', base=Bot)
 
-    def setup_atoms(self, grid: int = 3):
+    def setup_atoms(self, grid: int = 3, adaptive: bool = False):
         # Connect the bots to the coordinator, then to each other
         if grid == 3:
             self.coordinator.set_attr(**{'grid': GridTopology3Node()})
@@ -199,6 +204,7 @@ class Main:
                     bot_a.connect(bot_b_addr, alias=bot_name_b)
 
         # Setup the environment via the coordinator
+        self.coordinator.set_attr(**{'adaptive': adaptive})
         self.coordinator.init_environment()
 
         for bot in self.bot_dict.values():
@@ -206,8 +212,8 @@ class Main:
         for bot in self.bot_dict.values():
             bot.init_pac_nu_bar()
 
-    def run(self, rounds: int = 10, grid: int = 3):
-        self.setup_atoms(grid)
+    def run(self, rounds: int = 10, grid: int = 3, adaptive: bool = False):
+        self.setup_atoms(grid, adaptive)
         self.rounds = rounds
 
         # Virtually synchronous execution -- all messages sent in a round, are received within the same round

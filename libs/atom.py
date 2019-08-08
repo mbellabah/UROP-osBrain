@@ -19,6 +19,16 @@ class Atom(object):
         self.nu = None
         self.nu_bar = None
 
+        self.adaptive_learning: bool = False
+        self._gamma_mu = self._gamma
+        self._gamma_nu = self._gamma
+        self.round: int = 0         # round/iteration
+        self.epsilon = 1e-6
+
+        self.Gy_trajectory: list = []
+        self.Ay_trajectory: list = []
+        self._gamma_mu_trajectory = []
+
         # Later implement so don't have to broadcast to everyone
         self.global_atom_y: Dict[int, np.array] = {self.atom_id: self.get_y()}
         self.global_atom_nu_bar: Dict[int, np.array] = {}
@@ -133,16 +143,43 @@ class Atom(object):
         # update mu
         mat_product: np.array = self._Gj @ self.get_y()
         self.mu = self.mu + self._rho * self._gamma * mat_product
-        self.mu_bar = self.mu + self._rho * self._gamma * mat_product
+
+        PRODUCT = self._gamma * mat_product
+        self.Gy_trajectory.append(mat_product)
+
+        if self.adaptive_learning:
+            H_round = sum([g@g.T for g in self.Gy_trajectory])
+            n = H_round.shape[0]
+            diagonalized_H_round = np.diag(np.diag(H_round))
+            epsilon_identity = self.epsilon*np.identity(n)
+            total = np.diag(1/np.sqrt(np.diag(epsilon_identity + diagonalized_H_round)))
+
+            print(self.atom_id, "HEY", self._gamma * total)
+
+            PRODUCT = self._gamma * total @ mat_product
+
+        self.mu_bar = self.mu + self._rho * PRODUCT
 
         # update my y that exists in the global dict
         self.global_atom_y[self.atom_id] = self._y
 
     def update_nu(self):
-        mat_product: np.array = self._Aj @ self.get_global_y()
         # update nu
+        mat_product: np.array = self._Aj @ self.get_global_y()
         self.nu = self.nu + self._rho * self._gamma * mat_product
-        self.nu_bar = self.nu + self._rho * self._gamma * mat_product
+
+        PRODUCT = self._gamma * mat_product
+        self.Ay_trajectory.append(mat_product)
+
+        if self.adaptive_learning:
+            H_round = sum([g@g.T for g in self.Ay_trajectory])
+            n = H_round.shape[0]
+            diagonalized_H_round = np.diag(np.diag(H_round))
+            epsilon_identity = self.epsilon*np.identity(n)
+            total = np.diag(1/np.sqrt(np.diag(epsilon_identity + diagonalized_H_round)))
+            PRODUCT = (self._gamma*total) @ mat_product
+
+        self.nu_bar = self.nu + self._rho * PRODUCT
 
         # update my belief of nu_bar
         self.global_atom_nu_bar[self.atom_id] = self.nu_bar
