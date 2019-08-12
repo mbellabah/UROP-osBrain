@@ -1,5 +1,7 @@
-from typing import Dict, Tuple
+from typing import Dict, List
 import numpy as np
+import cvxpy as cp
+
 from libs.solver import atomic_solve
 
 
@@ -23,7 +25,7 @@ class Atom(object):
         self._gamma_mu = 0          # self._gamma
         self._gamma_nu = 0          # self._gamma
         self.round: int = 0         # round/iteration
-        self.epsilon = 1e-8
+        self.epsilon = 1e-10
 
         self.Gy_trajectory: list = []
         self.Ay_trajectory: list = []
@@ -37,6 +39,10 @@ class Atom(object):
         for m in range(self._global_num_nodes):
             qmj_tuple += (self._Qmj[m][0][self.atom_id - 1],)  # because indexing of atom starts at 1
         self._Qmj = np.vstack(qmj_tuple)
+
+        parent_node: int = int(self._parent_node)
+        self.upstream_line_resistance: float = self._neighbors[parent_node]['resistance']
+        self.upstream_line_thermal_limit: float = self._neighbors[parent_node]['thermal_limit']
 
         # broadcast and receive to initialize things on the network - order
         '''
@@ -56,7 +62,7 @@ class Atom(object):
 
     # MARK: Getters
     def get_global_y(self):
-        y_tuple: Tuple[np.array] = tuple([self.global_atom_y[key] for key in sorted(self.global_atom_y)])
+        y_tuple: List[np.array] = [self.global_atom_y[key] for key in sorted(self.global_atom_y)]
         return np.vstack(y_tuple)
 
     def get_y(self) -> np.array:
@@ -69,14 +75,14 @@ class Atom(object):
         return self.nu
 
     def get_global_nu_bar(self):
-        nu_bar_tuple: Tuple[np.array] = tuple([self.global_atom_nu_bar[key] for key in sorted(self.global_atom_nu_bar)])
+        nu_bar_tuple: List[np.array] = [self.global_atom_nu_bar[key] for key in sorted(self.global_atom_nu_bar)]
         return np.vstack(nu_bar_tuple)
 
     def init_dual_vars(self):
         self.mu: np.array = np.zeros_like(self._rho * self._gamma * self._Gj @ self.get_y())
         self.mu_bar: np.array = self.mu + self._rho * self._gamma * self._Gj @ self.get_y()
-        global_y_mat: np.array = self._Aj @ self.get_global_y()
 
+        global_y_mat: np.array = self._Aj @ self.get_global_y()
         self.nu: np.array = np.zeros_like(self._rho * self._gamma * global_y_mat)
         self.nu_bar: np.array = self.nu + self._rho * self._gamma * global_y_mat
 
@@ -111,52 +117,49 @@ class Atom(object):
             QL: float = var[5]
             Lij: float = var[2]       # the current flow on the upstream line
 
-            gen_cost: float = self._beta_pg*(PG - self._PG[0])**2 + self._beta_qg*(QG - self._QG[0])**2
-            load_util: float = self._beta_pl*(PL - self._PL[1])**2 + self._beta_ql*(QL - self._QL[1])**2
+            gen_cost: float = self._beta_pg*cp.square(PG - self._PG[0]) + self._beta_qg*cp.square(QG - self._QG[0])
+            load_util: float = self._beta_pl*cp.square(PL - self._PL[1]) + self._beta_ql*cp.square(QL - self._QL[1])
 
-            parent_node: int = int(self._parent_node)
-            upstream_line_resistance: float = self._neighbors[parent_node]['resistance']
-            loss: float = xi*upstream_line_resistance*Lij
+            loss: float = xi*self.upstream_line_resistance*Lij
 
         return gen_cost + load_util + loss
 
     def solve_atomic_objective_function(self) -> np.array:
-        parent_node: int = int(self._parent_node)
-        upstream_line_thermal_limit: float = self._neighbors[parent_node]['thermal_limit']
 
         params = {'global_nu_bar': (self.get_global_nu_bar().shape, self.get_global_nu_bar()), 'mu_bar': (self.mu_bar.shape, self.mu_bar), 'prev_y': (self.get_y().shape, self.get_y())}
         if self.first_time:
-            var, self.previous_problem = atomic_solve(self.cost_function, self._y.shape, Gj=self._Gj, rho=self._rho, Qmj=self._Qmj, Bj=self._Bj, bj=self._bj, bus_type=self._bus_type, thermal_limit=upstream_line_thermal_limit, prev_params=params)
+            var, self.previous_problem = atomic_solve(self.cost_function, self._y.shape, Gj=self._Gj, rho=self._rho, Qmj=self._Qmj, Bj=self._Bj, bj=self._bj, bus_type=self._bus_type, thermal_limit=self.upstream_line_thermal_limit, prev_params=params)
         else:
-            var, _ = atomic_solve(self.cost_function, self._y.shape, Gj=self._Gj, rho=self._rho, Qmj=self._Qmj, Bj=self._Bj, bj=self._bj, bus_type=self._bus_type, thermal_limit=upstream_line_thermal_limit, previous_problem=self.previous_problem, prev_params=params)
+            var, _ = atomic_solve(self.cost_function, self._y.shape, Gj=self._Gj, rho=self._rho, Qmj=self._Qmj, Bj=self._Bj, bj=self._bj, bus_type=self._bus_type, thermal_limit=self.upstream_line_thermal_limit, previous_problem=self.previous_problem, prev_params=params)
 
         return var
 
     def update_y_and_mu(self):
         try:
             self._y: np.array = self.solve_atomic_objective_function()
-            self.first_time = False         # we've successfuly done our first time!
+            self.first_time = False         # we've successfully done our first time!
         except ValueError as e:
             print('Could not solve for y')
             raise e
 
         # update mu
         mat_product: np.array = self._Gj @ self.get_y()
-        self.mu = self.mu + self._rho * self._gamma * mat_product
+        PRODUCT = self._rho * self._gamma * mat_product
 
-        PRODUCT = self._gamma * mat_product
-        self.Gy_trajectory.append(mat_product)
+        self.mu = self.mu + PRODUCT
+        self.Gy_trajectory.append(mat_product/self._rho)
 
         if self.adaptive_learning:
-            H_round = sum([g@g.T for g in self.Gy_trajectory])
-            n = H_round.shape[0]
-            diagonalized_H_round = np.diag(np.diag(H_round))
-            epsilon_identity = self.epsilon*np.identity(n)
-            total = np.diag(1/np.sqrt(np.diag(epsilon_identity + diagonalized_H_round)))
+            H = sum([g.T@g for g in self.Gy_trajectory])
+            # n = H.shape[0]
+            # diagonalized_H = np.diag(np.diag(H))
+            # epsilon_identity = self.epsilon*np.identity(n)
+            # total = np.diag(1/np.sqrt(np.diag(epsilon_identity + diagonalized_H)))
 
-            PRODUCT = self._gamma * total @ mat_product
+            self._gamma_mu = self._gamma/np.sqrt(self.epsilon + H)
+            PRODUCT = self._gamma_mu * mat_product
 
-        self.mu_bar = self.mu + self._rho * PRODUCT
+        self.mu_bar = self.mu + PRODUCT
 
         # update my y that exists in the global dict
         self.global_atom_y[self.atom_id] = self._y
@@ -164,10 +167,10 @@ class Atom(object):
     def update_nu(self):
         # update nu
         mat_product: np.array = self._Aj @ self.get_global_y()
-        self.nu = self.nu + self._rho * self._gamma * mat_product
+        PRODUCT = self._rho * self._gamma * mat_product
 
-        PRODUCT = self._gamma * mat_product
-        self.Ay_trajectory.append(mat_product)
+        self.nu = self.nu + PRODUCT
+        self.Ay_trajectory.append(mat_product/self._rho)
 
         # if self.adaptive_learning:
         #     H_round = sum([g@g.T for g in self.Ay_trajectory])
@@ -176,9 +179,9 @@ class Atom(object):
         #     epsilon_identity = self.epsilon*np.identity(n)
         #     total = np.diag(1/np.sqrt(np.diag(epsilon_identity + diagonalized_H_round)))
         #
-        #     PRODUCT = (self._gamma*total) @ mat_product
+        #     PRODUCT = self._gamma * total @ mat_product
 
-        self.nu_bar = self.nu + self._rho * PRODUCT
+        self.nu_bar = self.nu + PRODUCT
 
         # update my belief of nu_bar
         self.global_atom_nu_bar[self.atom_id] = self.nu_bar

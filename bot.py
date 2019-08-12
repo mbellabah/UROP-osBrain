@@ -1,3 +1,4 @@
+import time
 import sys
 import numpy as np
 from typing import Dict, Tuple, List
@@ -52,7 +53,6 @@ class Bot(Agent):
         """
         if request['is_request']:
             request_data_type = request['data_type']
-            self.log_debug(f'({self.round_y},{self.round_nu_bar}): Being asked for {request_data_type} by {request["sender"]}: {request["round"]}')
             reply = self.compose_data_package(data_type=request_data_type)
             return reply
 
@@ -80,7 +80,6 @@ class Bot(Agent):
         request: dict = {'is_request': True, 'data_type': data_type, 'sender': self.name, 'round': (self.round_y, self.round_nu_bar)}
         for j in self.neighbors:
             bot_name: str = f'Bot-{j}'
-            self.log_debug(f'Requesting {data_type} from {bot_name}')
             self.send_request(request=request, recipient=bot_name)
             # all subsequent replies are handled by the process_reply handler
             reply = self.recv(bot_name)
@@ -137,19 +136,6 @@ class Bot(Agent):
 
         self.atom.round += 1
 
-    # def is_synchronized(self) -> Tuple[bool, bool]:
-    #     y_bool: bool = True
-    #     nu_bar_bool: bool = True
-    #     for round_y, _ in self.neighbor_round.values():
-    #         if self.round_y != round_y:
-    #             y_bool = False
-    #             break
-    #     for _, round_nu_bar in self.neighbor_round.values():
-    #         if self.round_nu_bar != round_nu_bar:
-    #             nu_bar_bool = False
-    #             break
-    #     return y_bool, nu_bar_bool
-
 
 class Coordinator(Agent):
     def on_init(self):
@@ -173,7 +159,7 @@ class Coordinator(Agent):
 
 
 class Main:
-    def __init__(self, num_bots: int):
+    def __init__(self, num_bots: int, grid: int, adaptive: bool):
         self.bot_dict = {}
         self.rounds = 0
 
@@ -182,6 +168,8 @@ class Main:
         self.coordinator = run_agent('Coordinator', base=Coordinator)
         for i in range(1, num_bots+1):
             self.bot_dict[f'Bot-{i}'] = run_agent(f'Bot-{i}', base=Bot)
+
+        self.setup_atoms(grid, adaptive)
 
     def setup_atoms(self, grid: int = 3, adaptive: bool = False):
         # Connect the bots to the coordinator, then to each other
@@ -207,39 +195,36 @@ class Main:
         self.coordinator.set_attr(**{'adaptive': adaptive})
         self.coordinator.init_environment()
 
-        for bot in self.bot_dict.values():
-            bot.init_pac_y()
-        for bot in self.bot_dict.values():
-            bot.init_pac_nu_bar()
+        cached_methods = [bot.init_pac_y for bot in self.bot_dict.values()]
+        cached_methods += [bot.init_pac_nu_bar for bot in self.bot_dict.values()]
 
-    def run(self, rounds: int = 10, grid: int = 3, adaptive: bool = False):
-        self.setup_atoms(grid, adaptive)
+        for cached in cached_methods:
+            cached()
+
+    def run(self, rounds: int = 10):
         self.rounds = rounds
 
         # Virtually synchronous execution -- all messages sent in a round, are received within the same round
         #       note that the req-rep patterns also enforces message-passing be done in lockstep
+        cached_methods = [bot.run_pac_y for bot in self.bot_dict.values()]
+        cached_methods += [bot.run_pac_nu_bar for bot in self.bot_dict.values()]
+
         for i in range(self.rounds):
             sys.stdout.write("Round progress: %d/%i   \r" % (i, self.rounds))
             sys.stdout.flush()
 
-            for bot in self.bot_dict.values():
-                bot.run_pac_y()
+            # (1) Slightly faster than (2)
+            for cached in cached_methods:
+                cached()
 
-            for bot in self.bot_dict.values():
-                bot.set_attr(**{'round_y': bot.get_attr('round_y') + 1})
-
-            for bot in self.bot_dict.values():
-                bot.run_pac_nu_bar()
-
-            for bot in self.bot_dict.values():
-                bot.set_attr(**{'round_nu_bar': bot.get_attr('round_nu_bar') + 1})
-
-        flag = True
-        while flag:
-            for bot in self.bot_dict.values():
-                if bot.get_attr('round_y') == rounds and bot.get_attr('round_nu_bar') == rounds:
-                    flag = False
-                    break
+            # (2)
+            # for bot in self.bot_dict.values():
+            #     bot.run_pac_y()
+            #     bot.set_attr(**{'round_y': bot.get_attr('round_y') + 1})
+            #
+            # for bot in self.bot_dict.values():
+            #     bot.run_pac_nu_bar()
+            #     bot.set_attr(**{'round_nu_bar': bot.get_attr('round_nu_bar') + 1})
 
     def run_diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
         # Print the final values to screen (stdout)
@@ -255,7 +240,7 @@ class Main:
         self.diagnostics(historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
 
     def diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
-        de_granular: int = 1 # 3 if self.rounds > 100 else 1      # will plot every granular <int>
+        de_granular: int = 1    # 3 if self.rounds > 100 else 1      # will plot every granular <int>
 
         if feasibility:
             # constraints feasibility
@@ -280,7 +265,7 @@ class Main:
             plt.subplot(1, 2, 1)
             plt.xlabel('round number')
             plt.title("Distance to Feasibility")
-            plt.ylim([0, 1])
+            plt.ylim([0, 0.125])
             plt.plot(x, feasibility_error)
 
         if consistency:
@@ -303,7 +288,7 @@ class Main:
             plt.subplot(1, 2, 2)
             plt.xlabel('round number')
             plt.title("Distance to Consistency")
-            plt.ylim([0, 1])
+            plt.ylim([0, 0.125])
             plt.plot(consistency_error)
 
         if historical_trail in ['y', 'nu']:

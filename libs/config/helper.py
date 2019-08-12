@@ -1,5 +1,7 @@
 import time
 
+time_list = []
+
 
 def timeit(method):
     def timed(*args, **kw):
@@ -10,9 +12,10 @@ def timeit(method):
             name = kw.get('log_name', method.__name__.upper())
             kw['log_time'][name] = int((te - ts) * 1000)
         else:
-            print("#"*31)
-            print('%r  %2.2f ms' % (method.__name__, (te - ts) * 1000))
-            print("#"*31)
+            # print("#"*31)
+            # print('%r  %2.2f ms' % (method.__name__, (te - ts) * 1000))
+            time_list.append((te-ts)*1000)
+            # print("#"*31)
         return result
     return timed
 

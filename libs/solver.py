@@ -6,81 +6,6 @@ from libs.config.helper import timeit
 SOLVER = cp.GUROBI
 
 
-# MARK: Example Optimization Problems
-# @timeit
-# def pyomo_example_1():
-#     # knapsack Example using pyomo
-#
-#     v = {'hammer': 8, 'wrench': 3, 'screwdriver': 6, 'towel': 11}
-#     w = {'hammer': 8, 'wrench': 7, 'screwdriver': 4, 'towel': 3}
-#
-#     limit = 14
-#     items = list(sorted(v.keys()))
-#
-#     m = ConcreteModel()
-#
-#     # Variables
-#     m.x = Var(items, within=Binary)
-#
-#     # Objective
-#     m.value = Objective(expr = sum(v[i]*m.x[i] for i in items), sense=maximize)
-#     # Constraint
-#     m.weight = Constraint(expr = sum(w[i]*m.x[i] for i in items) <= limit)
-#     # Optimize
-#     solver = SolverFactory('glpk')
-#     status = solver.solve(m)
-#
-#     print("status = %s" % status.solver.termination_condition)
-#
-#     # Print the value of the variables at the optimum
-#     for i in items:
-#         print("%s = %f" % (m.x[i], value(m.x[i])))
-#
-#     # Print the value of the objective
-#     print("Objective = %f" % value(m.value))
-#
-#
-# @timeit
-# def pyomo_example_2():
-#     m = ConcreteModel()
-#
-#     m.x = Var(['x', 'y'], within=Binary)
-#     m.Cost = Objective(expr=(m.x['x'] - m.x['y'])**2, sense=minimize)
-#     m.constraints = ConstraintList()
-#     m.constraints.add(expr=(m.x['x'] + m.x['y']) == 1)
-#     m.constraints.add(expr=(m.x['x'] - m.x['y']) >= 1)
-#
-#     results = SolverFactory('cvxopt').solve(m)
-#     results.write()
-#
-#
-# @timeit
-def cvx_py_example_1():
-    # Create two scalar optimization variables.
-    x = cp.Variable()
-    y = cp.Variable()
-    m = cp.Parameter(name='m')
-
-    m.value = 1
-
-    # Create two constraints.
-    constraints = [x + y == 1,
-                   x - y >= 1]
-
-    # Form objective.
-    obj = cp.Minimize((m*x - y) ** 2)
-
-    # Form and solve problem.
-    prob = cp.Problem(obj, constraints)
-    prob.solve()  # Returns the optimal value.
-
-    for var in prob.parameters():
-        print(var.name(), var.value)
-
-    print("status:", prob.status)
-    print("optimal value", prob.value)
-    print("optimal var", x.value, y.value)
-
 def atomic_solve(cost_function, a_shape: tuple, Gj: np.array, rho: float, Qmj: np.array, Bj: np.array, bj: np.array, bus_type: str, thermal_limit: float, previous_problem=None, prev_params=None) -> np.array:
 
     if not previous_problem:
@@ -97,7 +22,7 @@ def atomic_solve(cost_function, a_shape: tuple, Gj: np.array, rho: float, Qmj: n
         quad_constraints = []
         if bus_type != 'feeder':
             """
-            (eq. 1) Pij^2 + Qij^2 - Sij <= 0 
+            (eq. 1) Pij^2 + Qij^2 - Sij^2 <= 0 
             (eq. 2) Pij^2 + Qij^2 - vi*Lij <= 0  
             """
             n = a_shape[0]
@@ -153,5 +78,3 @@ def ropf(global_cost_func, num_edges, num_nodes, B, b, G, c):
 
 if __name__ == '__main__':
     print(cp.installed_solvers())
-
-    cvx_py_example_1()

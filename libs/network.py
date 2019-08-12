@@ -194,7 +194,7 @@ class GridTopologyBase(Network):
         L = 100
 
         GHat = (np.asarray(Gj_mats[j-1]) for j in range(1, self._N+1))
-        GHat = block_diag(*GHat)
+        GHat = block_diag(*GHat)        # G_tilda
         A = tuple(np.asarray(Aj_mats[j-1]) for j in range(1, self._N+1))
         A = np.vstack(A)
         self.A = A
@@ -219,11 +219,11 @@ class GridTopologyBase(Network):
             n_neighbors = len(self.graph[j])
             y_num_elements: int = 0       # the number of vars/elements for the given node's y vector
 
-            self.set_node_attribute(j, 'Aj', Aj_mats[i])
-            self.set_node_attribute(j, 'bj', np.array(b_vecs[i][:, 0]).reshape((-1, 1)))
-            self.set_node_attribute(j, 'Bj', Bj_mats[i])
+            self.set_node_attribute(j, 'Aj', Aj_mats[i])        # Bj
+            self.set_node_attribute(j, 'bj', np.array(b_vecs[i][:, 0]).reshape((-1, 1)))    # ej
+            self.set_node_attribute(j, 'Bj', Bj_mats[i])        # Aj
             self.set_node_attribute(j, 'Gj', Gj_mats[i])
-            self.set_node_attribute(j, 'Qmj', Qmj_mats)     # TODO: Make correct getter
+            self.set_node_attribute(j, 'Qmj', Qmj_mats)     # TODO: Make correct getter  # Bj2
 
             self.set_node_attribute(j, 'PL', (self.PLLow[i], self.PLUpp[i]))
             self.set_node_attribute(j, 'PG', (self.PGLow[i], self.PGUpp[i]))
