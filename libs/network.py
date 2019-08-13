@@ -15,7 +15,6 @@ class Network(object):
             self.V_base = 24.9e3
             self.S_base = 1000e3
             self.V_base = 24.9e3
-            self.S_base = 1000e3
             self.Z_base = self.V_base ** 2 / self.S_base
             self.thermal_limit = 10e6 / self.S_base
             self.define_QL = 1e3 / self.S_base
@@ -56,7 +55,7 @@ class Network(object):
     # MARK: Utility
     def render(self):
         import matplotlib.pyplot as plt
-        nx.draw(self.graph, with_labels=True, font_weight='bold')
+        nx.draw_kamada_kawai(self.graph, with_labels=True, font_weight='bold')
         plt.show()
 
     def num_nodes(self):
@@ -123,7 +122,7 @@ class GridTopologyBase(Network):
         self.QGUpp = self.get_numpy_nodes_attribute(attribute='reactive_gen')
         self.QGLow = self.QGUpp*0
 
-        self.VLow = np.ones((self.num_nodes(), 1))*self._V0
+        self.VLow = np.ones((self.num_nodes(), 1))*self._Vlb
         self.VLow[0] = self._V0
         self.VUpp = np.ones((self.num_nodes(), 1))*self._Vub
         self.VUpp[0] = self._V0
@@ -132,6 +131,7 @@ class GridTopologyBase(Network):
         self.c: np.array = np.zeros((3 * (self._N - 1) + 2, 1))
         b_tuple: tuple = (self.PLUpp, -self.PLLow, self.PGUpp, -self.PGLow, self.QLUpp, -self.QLLow, self.QGUpp, -self.QGLow, self.VUpp, -self.VLow)
         self.b: np.array = np.vstack(b_tuple)
+        self.A = None
 
         self.assign_to_nodes()
 
@@ -145,15 +145,9 @@ class GridTopologyBase(Network):
         self._N = np.int(self._N)
 
     def setup(self):
-        # _nodes: Dict[Tuple[int, dict]] = {
-        #     i: (i, {
-        #         'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0, 'reactive_gen': 0.0, 'beta_pl': 3*np.random.rand()+2, 'beta_pg': np.random.rand()+2, 'beta_ql': 3*np.random.rand()+2, 'beta_qg': 3*np.random.rand()+2
-        #     }) for i in range(1, self._N+1)
-        # }
-
         _nodes: Dict[Tuple[int, dict]] = {
             i: (i, {
-                'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0, 'reactive_gen': 0.0, 'beta_pl': 1.0, 'beta_pg': 1.0, 'beta_ql': 1.0, 'beta_qg': 1.0
+                'bus_type': 'bus', 'real_load': 0.0, 'reactive_load': 0.0, 'real_gen': 0.0, 'reactive_gen': 0.0, 'beta_pl': 1.0, 'beta_pg': 1.0, 'beta_ql': 1.0, 'beta_qg': 1.0
             }) for i in range(1, self._N+1)
         }
 
@@ -196,13 +190,14 @@ class GridTopologyBase(Network):
 
         # Compute the PAC parameters
         Phi = 1.8744
-        alpha = 0.005
+        alpha = 1.0
         L = 100
 
         GHat = (np.asarray(Gj_mats[j-1]) for j in range(1, self._N+1))
-        GHat = block_diag(*GHat)
+        GHat = block_diag(*GHat)        # G_tilda
         A = tuple(np.asarray(Aj_mats[j-1]) for j in range(1, self._N+1))
         A = np.vstack(A)
+        self.A = A
         total = GHat.T@GHat + A.T@A
         eigs_PAC = np.linalg.eigvals(total).real
         sigmax_PAC = max(eigs_PAC)
@@ -224,11 +219,11 @@ class GridTopologyBase(Network):
             n_neighbors = len(self.graph[j])
             y_num_elements: int = 0       # the number of vars/elements for the given node's y vector
 
-            self.set_node_attribute(j, 'Aj', Aj_mats[i])
-            self.set_node_attribute(j, 'bj', np.array(b_vecs[i][:,0]).reshape((-1,1)))
-            self.set_node_attribute(j, 'Bj', Bj_mats[i])
+            self.set_node_attribute(j, 'Aj', Aj_mats[i])        # Bj
+            self.set_node_attribute(j, 'bj', np.array(b_vecs[i][:, 0]).reshape((-1, 1)))    # ej
+            self.set_node_attribute(j, 'Bj', Bj_mats[i])        # Aj
             self.set_node_attribute(j, 'Gj', Gj_mats[i])
-            self.set_node_attribute(j, 'Qmj', Qmj_mats)     # TODO: Make correct getter
+            self.set_node_attribute(j, 'Qmj', Qmj_mats)     # TODO: Make correct getter  # Bj2
 
             self.set_node_attribute(j, 'PL', (self.PLLow[i], self.PLUpp[i]))
             self.set_node_attribute(j, 'PG', (self.PGLow[i], self.PGUpp[i]))
@@ -282,7 +277,32 @@ class GridTopology3Node(GridTopologyBase):
         super(GridTopology3Node, self).__init__(load_mat=load_mat, verbose=verbose)
 
 
+class GridTopology10Node(GridTopologyBase):
+    def __init__(self, riaps: bool = True, verbose: bool = False):
+        self.xi: float = 1.0
+        self.feeder_cost = 1.0
+        if riaps:
+            load_mat: str = f'{os.getcwd()}/libs/config/GridTopo10Node.mat'
+        else:
+            load_mat: str = 'config/GridTopo10Node.mat'
+
+        super(GridTopology10Node, self).__init__(load_mat=load_mat, verbose=verbose)
+
+
+class GridTopology26Node(GridTopologyBase):
+    def __init__(self, riaps: bool = True, verbose: bool = False):
+        self.xi: float = 1.0
+        self.feeder_cost = 1.0
+        if riaps:
+            load_mat: str = f'{os.getcwd()}/libs/config/GridTopo26Node.mat'
+        else:
+            load_mat: str = 'config/GridTopo26Node.mat'
+
+        super(GridTopology26Node, self).__init__(load_mat=load_mat, verbose=verbose)
+
+
 if __name__ == '__main__':
-    grid = GridTopology3Node(riaps=False, verbose=True)
-    print(grid.graph.edges)
-    # print(grid._G)
+    # grid = GridTopology3Node(riaps=False, verbose=True)
+    grid = GridTopology10Node(riaps=False, verbose=True)
+    grid.render()
+
