@@ -28,6 +28,7 @@ if __name__ == '__main__':
     parser.add_argument('-historical_trail', type=str, help='show the trail of either y or nu')
     parser.add_argument('-a', action='store_true', dest='adaptive', help='turn on adaptive learning')
     parser.add_argument('-plot', action='store_true', dest='plot_rounds', help='to determine whether things are linear')
+    parser.add_argument('-cim', action='store_true', default=False, dest='cim', help='use cim network, otherwise use data')
     args = parser.parse_args()
 
     rounds: int = args.round
@@ -37,8 +38,9 @@ if __name__ == '__main__':
     historical_trail: str = args.historical_trail
     adaptive: bool = args.adaptive
     plot: bool = args.plot_rounds
+    cim: bool = args.cim
 
-    main_class = Main(num_bots=grid_type, grid=grid_type, adaptive=adaptive)
+    main_class = Main(num_bots=grid_type, grid=grid_type, adaptive=adaptive, cim=cim)
 
     if plot:
         for r in range(1, rounds, 50):
@@ -50,7 +52,8 @@ if __name__ == '__main__':
         run_diagnostics(historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
     main_class.ns.shutdown()
 
-    plt.plot(time_list)
-    plt.title('Rounds plotted against runtime')
-    plt.show()
+    if plot:
+        plt.plot(time_list)
+        plt.title('Rounds plotted against runtime')
+        plt.show()
 

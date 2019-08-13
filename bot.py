@@ -1,4 +1,3 @@
-import time
 import sys
 import numpy as np
 from typing import Dict, Tuple, List
@@ -9,7 +8,6 @@ from osbrain import run_agent
 from osbrain import run_nameserver
 from osbrain import Agent
 
-from libs.network import GridTopology3Node, GridTopology10Node, GridTopology26Node
 from libs.atom import Atom
 
 from libs.config.helper import col_print, print_final
@@ -159,9 +157,11 @@ class Coordinator(Agent):
 
 
 class Main:
-    def __init__(self, num_bots: int, grid: int, adaptive: bool):
+    def __init__(self, num_bots: int, grid: int, adaptive: bool, cim: bool):
         self.bot_dict = {}
         self.rounds = 0
+        self.cim = cim
+        self.adaptive = adaptive
 
         # System deployment
         self.ns = run_nameserver()
@@ -169,18 +169,24 @@ class Main:
         for i in range(1, num_bots+1):
             self.bot_dict[f'Bot-{i}'] = run_agent(f'Bot-{i}', base=Bot)
 
-        self.setup_atoms(grid, adaptive)
+        self.setup_atoms(grid)
 
-    def setup_atoms(self, grid: int = 3, adaptive: bool = False):
+    def setup_atoms(self, grid: int = 3):
         # Connect the bots to the coordinator, then to each other
-        if grid == 3:
-            self.coordinator.set_attr(**{'grid': GridTopology3Node()})
-        elif grid == 10:
-            self.coordinator.set_attr(**{'grid': GridTopology10Node()})
-        elif grid == 26:
-            self.coordinator.set_attr(**{'grid': GridTopology26Node()})
+        if self.cim:
+            if grid == 3:
+                pass
         else:
-            raise Exception("Must define a network topology!")
+            from libs.networks.network_jordan import GridTopology3Node, GridTopology10Node, GridTopology26Node
+
+            if grid == 3:
+                self.coordinator.set_attr(**{'grid': GridTopology3Node()})
+            elif grid == 10:
+                self.coordinator.set_attr(**{'grid': GridTopology10Node()})
+            elif grid == 26:
+                self.coordinator.set_attr(**{'grid': GridTopology26Node()})
+            else:
+                raise Exception("Must define a network topology!")
 
         for bot_name_a, bot_a in self.bot_dict.items():
             coordinator_addr = self.coordinator.addr(COORDINATOR_CHANNEL)
@@ -192,7 +198,7 @@ class Main:
                     bot_a.connect(bot_b_addr, alias=bot_name_b)
 
         # Setup the environment via the coordinator
-        self.coordinator.set_attr(**{'adaptive': adaptive})
+        self.coordinator.set_attr(**{'adaptive': self.adaptive})
         self.coordinator.init_environment()
 
         cached_methods = [bot.init_pac_y for bot in self.bot_dict.values()]

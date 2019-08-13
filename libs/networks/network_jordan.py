@@ -269,10 +269,11 @@ class GridTopology3Node(GridTopologyBase):
     def __init__(self, riaps: bool = True, verbose: bool = False):
         self.xi: float = 1.0
         self.feeder_cost = 1.0
+        endpoint = 'config/data/GridTopo3Node.mat'
         if riaps:
-            load_mat: str = f'{os.getcwd()}/libs/config/GridTopo3Node.mat'
+            load_mat: str = f'{os.getcwd()}/libs/{endpoint}'
         else:
-            load_mat: str = 'config/GridTopo3Node.mat'
+            load_mat: str = endpoint
 
         super(GridTopology3Node, self).__init__(load_mat=load_mat, verbose=verbose)
 
@@ -281,10 +282,11 @@ class GridTopology10Node(GridTopologyBase):
     def __init__(self, riaps: bool = True, verbose: bool = False):
         self.xi: float = 1.0
         self.feeder_cost = 1.0
+        endpoint = 'config/data/GridTopo10Node.mat'
         if riaps:
-            load_mat: str = f'{os.getcwd()}/libs/config/GridTopo10Node.mat'
+            load_mat: str = f'{os.getcwd()}/libs/{endpoint}'
         else:
-            load_mat: str = 'config/GridTopo10Node.mat'
+            load_mat: str = endpoint
 
         super(GridTopology10Node, self).__init__(load_mat=load_mat, verbose=verbose)
 
@@ -293,10 +295,11 @@ class GridTopology26Node(GridTopologyBase):
     def __init__(self, riaps: bool = True, verbose: bool = False):
         self.xi: float = 1.0
         self.feeder_cost = 1.0
+        endpoint = 'config/data/GridTopo26Node.mat'
         if riaps:
-            load_mat: str = f'{os.getcwd()}/libs/config/GridTopo26Node.mat'
+            load_mat: str = f'{os.getcwd()}/libs/{endpoint}'
         else:
-            load_mat: str = 'config/GridTopo26Node.mat'
+            load_mat: str = endpoint
 
         super(GridTopology26Node, self).__init__(load_mat=load_mat, verbose=verbose)
 
@@ -304,5 +307,4 @@ class GridTopology26Node(GridTopologyBase):
 if __name__ == '__main__':
     # grid = GridTopology3Node(riaps=False, verbose=True)
     grid = GridTopology10Node(riaps=False, verbose=True)
-    grid.render()
 
