@@ -1,6 +1,5 @@
 import time
-import logging
-import threading
+import sys
 import numpy as np
 from typing import Dict, Tuple, List
 import matplotlib.pyplot as plt
@@ -10,15 +9,14 @@ from osbrain import run_agent
 from osbrain import run_nameserver
 from osbrain import Agent
 
-from libs.network import GridTopology3Node
+from libs.network import GridTopology3Node, GridTopology10Node, GridTopology26Node
 from libs.atom import Atom
+
+from libs.config.helper import col_print, print_final
 
 
 # MARK: Channels
 COORDINATOR_CHANNEL = 'coordinator'
-
-logger = logging.getLogger('bot')
-logging.basicConfig(level=logging.DEBUG, filename="logfile", filemode="w+", format="%(asctime)-15s %(message)s")
 
 osbrain.config['TRANSPORT'] = 'ipc'
 
@@ -26,7 +24,7 @@ osbrain.config['TRANSPORT'] = 'ipc'
 # MARK: Classes
 class Bot(Agent):
     def on_init(self):
-        self.bind('PUB', alias=COORDINATOR_CHANNEL)
+        self.bind('SUB', alias=COORDINATOR_CHANNEL, handler='receive_setup')
         self.bind('REP', alias=self.name, handler='reply_to_request')
 
         self.bot_id: int = int(self.name[4:])
@@ -35,15 +33,18 @@ class Bot(Agent):
         self.round_y: int = 0
         self.round_nu_bar: int = 0
 
-        self.neighbors: list = list({1, 2, 3} - {self.bot_id})      # FIXME: list(self.atom_neighbor.keys())
+        self.neighbors: List = [None]
         self.neighbor_round: Dict[str, Tuple[int, int]] = {}
 
         self.is_init_y: bool = False
         self.is_init_nu_bar: bool = False
 
         self.feasibility: List = []
-        self.historical_trail = []
-        self._DEBUG = True
+
+        self.historical_trail_y = []
+        self.historical_trail_nu = []
+
+        self._DEBUG = False
 
     # MARK: Communication
     def reply_to_request(self, request: dict) -> dict:      # When asked something, provide data on self
@@ -52,9 +53,7 @@ class Bot(Agent):
         """
         if request['is_request']:
             request_data_type = request['data_type']
-            self.log_debug(f'({self.round_y},{self.round_nu_bar}): Being asked for {request_data_type} by {request["sender"]}: {request["round"]}')
             reply = self.compose_data_package(data_type=request_data_type)
-            logger.info('Bot-{} was asked for {} by {}\ngiving: {}'.format(self.bot_id, request['data_type'], request['sender'], reply['payload']))
             return reply
 
     def process_reply(self, response: dict):     # After request, how to process the subsequent reply
@@ -81,17 +80,19 @@ class Bot(Agent):
         request: dict = {'is_request': True, 'data_type': data_type, 'sender': self.name, 'round': (self.round_y, self.round_nu_bar)}
         for j in self.neighbors:
             bot_name: str = f'Bot-{j}'
-            self.log_debug(f'Requesting {data_type} from {bot_name}')
             self.send_request(request=request, recipient=bot_name)
             # all subsequent replies are handled by the process_reply handler
             reply = self.recv(bot_name)
             self.process_reply(reply)
 
     def receive_setup(self, data_package: dict):
-        if 'is_setup' in data_package:
-            self.log_info('Received setup information')
+        if 'is_setup' in data_package and data_package['recipient'] == self.name:       # FIXME: Really weird bug where bot-1 receives bot-10's info as well
+            self.log_info(f'Received setup information, recipient: {data_package["recipient"]}')
             self.atom = Atom(atom_id=self.bot_id, node_data_package=data_package['data'])
-            self.historical_trail.append(self.atom.get_y())
+            self.atom.adaptive_learning = data_package['adaptive']
+
+            self.neighbors = list(set([*range(1, self.atom._global_num_nodes+1)]) - {self.bot_id})   # FIXME: list(self.atom_neighbor.keys())
+            self.historical_trail_y.append(self.atom.get_y())
 
     # MARK: Utility
     def compose_data_package(self, data_type: str) -> dict:
@@ -115,6 +116,7 @@ class Bot(Agent):
     def init_pac_y(self):
         self.request_all(data_type='y')
         self.atom.init_dual_vars()
+        self.historical_trail_nu.append(self.atom.nu)
 
     def init_pac_nu_bar(self):
         self.request_all(data_type='nu_bar')
@@ -123,48 +125,29 @@ class Bot(Agent):
         # Perform the updates
         self.feasibility.append(self.atom._Gj @ self.atom.get_y())
 
-        self.request_all(data_type='y')
-
-        y_bool, _ = self.is_synchronized()
-        if y_bool:
-            self.atom.update_y_and_mu()
-            self.historical_trail.append(self.atom.get_y())
+        self.request_all(data_type='nu_bar')
+        self.atom.update_y_and_mu()
+        self.historical_trail_y.append(self.atom.get_y())
 
     def run_pac_nu_bar(self):
+        self.request_all(data_type='y')
+        self.atom.update_nu()
+        self.historical_trail_nu.append(self.atom.nu)
 
-        _, nu_bar_bool = self.is_synchronized()
-        if nu_bar_bool:
-            self.atom.update_nu()
-            self.request_all(data_type='nu_bar')
-
-    def periodic_pac(self, delta_t: float = 1):
-        self.each(delta_t, 'run_pac', alias='periodic_pac')
-
-    def is_synchronized(self) -> Tuple[bool, bool]:
-        y_bool: bool = True
-        nu_bar_bool: bool = True
-        for round_y, _ in self.neighbor_round.values():
-            if self.round_y != round_y:
-                y_bool = False
-                break
-        for _, round_nu_bar in self.neighbor_round.values():
-            if self.round_nu_bar != round_nu_bar:
-                nu_bar_bool = False
-                break
-        return y_bool, nu_bar_bool
+        self.atom.round += 1
 
 
 class Coordinator(Agent):
     def on_init(self):
         self.bind('PUB', alias=COORDINATOR_CHANNEL)
         self.grid = None
+        self.adaptive = False
 
     def init_environment(self):
-        self.grid = GridTopology3Node()
-        for j in range(1, self.grid.num_nodes()+1):
+        # self.grid = GridTopology10Node  # GridTopology3Node()     # FIXME
+        for j in range(1, self.grid._N+1):
             atom_data_package = self.grid.graph.node(data=True)[j]
-            data_package = {'is_setup': True, 'data': atom_data_package}
-
+            data_package = {'is_setup': True, 'adaptive': self.adaptive, 'data': atom_data_package, 'recipient': f'Bot-{j}'}
             self.setup_bot(data_package=data_package, recipient=f'Bot-{j}')
 
     def setup_bot(self, data_package: dict, recipient: str):
@@ -176,8 +159,9 @@ class Coordinator(Agent):
 
 
 class Main:
-    def __init__(self, num_bots: int):
+    def __init__(self, num_bots: int, grid: int, adaptive: bool):
         self.bot_dict = {}
+        self.rounds = 0
 
         # System deployment
         self.ns = run_nameserver()
@@ -185,8 +169,19 @@ class Main:
         for i in range(1, num_bots+1):
             self.bot_dict[f'Bot-{i}'] = run_agent(f'Bot-{i}', base=Bot)
 
-    def setup_atoms(self):
+        self.setup_atoms(grid, adaptive)
+
+    def setup_atoms(self, grid: int = 3, adaptive: bool = False):
         # Connect the bots to the coordinator, then to each other
+        if grid == 3:
+            self.coordinator.set_attr(**{'grid': GridTopology3Node()})
+        elif grid == 10:
+            self.coordinator.set_attr(**{'grid': GridTopology10Node()})
+        elif grid == 26:
+            self.coordinator.set_attr(**{'grid': GridTopology26Node()})
+        else:
+            raise Exception("Must define a network topology!")
+
         for bot_name_a, bot_a in self.bot_dict.items():
             coordinator_addr = self.coordinator.addr(COORDINATOR_CHANNEL)
             bot_a.connect(coordinator_addr, handler={bot_name_a: 'receive_setup'})
@@ -197,110 +192,127 @@ class Main:
                     bot_a.connect(bot_b_addr, alias=bot_name_b)
 
         # Setup the environment via the coordinator
+        self.coordinator.set_attr(**{'adaptive': adaptive})
         self.coordinator.init_environment()
 
-        for bot in self.bot_dict.values():
-            bot.init_pac_y()
-        for bot in self.bot_dict.values():
-            bot.init_pac_nu_bar()
+        cached_methods = [bot.init_pac_y for bot in self.bot_dict.values()]
+        cached_methods += [bot.init_pac_nu_bar for bot in self.bot_dict.values()]
+
+        for cached in cached_methods:
+            cached()
 
     def run(self, rounds: int = 10):
-        self.setup_atoms()
+        self.rounds = rounds
 
-        for _ in range(rounds):
-            for bot in self.bot_dict.values():
-                bot.run_pac_y()
+        # Virtually synchronous execution -- all messages sent in a round, are received within the same round
+        #       note that the req-rep patterns also enforces message-passing be done in lockstep
+        cached_methods = [bot.run_pac_y for bot in self.bot_dict.values()]
+        cached_methods += [bot.run_pac_nu_bar for bot in self.bot_dict.values()]
 
-            for bot in self.bot_dict.values():
-                bot.set_attr(**{'round_y': bot.get_attr('round_y') + 1})
+        for i in range(self.rounds):
+            sys.stdout.write("Round progress: %d/%i   \r" % (i, self.rounds))
+            sys.stdout.flush()
 
-            for bot in self.bot_dict.values():
-                bot.run_pac_nu_bar()
+            # (1) Slightly faster than (2)
+            for cached in cached_methods:
+                cached()
 
-            for bot in self.bot_dict.values():
-                bot.set_attr(**{'round_nu_bar': bot.get_attr('round_nu_bar') + 1})
+            # (2)
+            # for bot in self.bot_dict.values():
+            #     bot.run_pac_y()
+            #     bot.set_attr(**{'round_y': bot.get_attr('round_y') + 1})
+            #
+            # for bot in self.bot_dict.values():
+            #     bot.run_pac_nu_bar()
+            #     bot.set_attr(**{'round_nu_bar': bot.get_attr('round_nu_bar') + 1})
 
-        # for bot in self.bot_dict.values():
-        #     bot.periodic_pac(delta_t=0.5)
+    def run_diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
+        # Print the final values to screen (stdout)
+        # Some pretty printing stuff
+        print_final(self.rounds)
 
-        flag = True
-        while flag:
-            for bot in self.bot_dict.values():
-                if bot.get_attr('round_y') == rounds and bot.get_attr('round_nu_bar') == rounds:
-                    flag = False
-                    break
+        for bot in self.bot_dict.values():
+            bot_name = f'Bot-{bot.get_attr("bot_id")}'
+            final_vector = bot.get_attr('atom').get_y()
+            col_print(bot_name, final_vector)
+        print('#'*31)
 
-        self.diagnostics(rounds, historical_trail=True, feasibility=False, consistency=False)
-        self.ns.shutdown()
+        self.diagnostics(historical_trail=historical_trail, feasibility=feasibility, consistency=consistency)
 
-    def diagnostics(self, rounds: int, historical_trail=False, feasibility=False, consistency=False):
-        # TODO: Fix bug here
+    def diagnostics(self, historical_trail='na', feasibility=False, consistency=False):
+        de_granular: int = 1    # 3 if self.rounds > 100 else 1      # will plot every granular <int>
 
         if feasibility:
             # constraints feasibility
-            logging.info('-'*40)
-            logging.info('-'*40)
-
             bot_feasibility: dict = {}
             for bot_name, bot in self.bot_dict.items():
                 bot_feasibility[bot_name] = bot.get_attr('feasibility')
 
+            x = []
             feasibility_error: List[float] = []
-            for i in range(len(bot_feasibility['Bot-1'])):
-                stacked_vector_tuple = ()
-                for bot_name, feasibility_vec in bot_feasibility.items():
-                    stacked_vector_tuple += (feasibility_vec[i],)
+            for i in range(self.rounds):
+                if i % de_granular == 0:
+                    stacked_vector_tuple = ()
+                    for bot_name, feasibility_vec in bot_feasibility.items():
+                        stacked_vector_tuple += (feasibility_vec[i],)
 
-                stacked_vector: np.array = np.vstack(stacked_vector_tuple)
-                error: float = np.linalg.norm(stacked_vector)
-                feasibility_error.append(error)
+                    stacked_vector: np.array = np.vstack(stacked_vector_tuple)
+                    error: float = np.linalg.norm(stacked_vector)
+                    feasibility_error.append(error)
 
-            feasibility_figure = plt.figure(1)
-            plt.plot(feasibility_error)
+                    x.append(i)
+
+            plt.subplot(1, 2, 1)
             plt.xlabel('round number')
             plt.title("Distance to Feasibility")
-            feasibility_figure.show()
+            plt.ylim([0, 0.125])
+            plt.plot(x, feasibility_error)
 
         if consistency:
-            logging.info('-'*40)
-            logging.info('-'*40)
-
             # consistency
+            x = []
             consistency_error: List[float] = []
-            for i in range(len(self.bot_dict['Bot-1'].get_attr('historical_trail'))):
-                stacked_y_vector_tuple = ()
-                for bot_name, bot in self.bot_dict.items():
+            for i in range(self.rounds):
+                if i % de_granular == 0:
+                    stacked_y_vector_tuple = ()
+                    for bot_name, bot in self.bot_dict.items():
+                        stacked_y_vector_tuple += (bot.get_attr('historical_trail_y')[i],)
 
-                    stacked_y_vector_tuple += (bot.get_attr('historical_trail')[i],)
-                stacked_y_vector: np.array = np.vstack(stacked_y_vector_tuple)
-                A = self.coordinator.get_attr('grid').A
-                error: float = np.linalg.norm(A@stacked_y_vector)
-                consistency_error.append(error)
+                    stacked_y_vector: np.array = np.vstack(stacked_y_vector_tuple)
+                    A = self.coordinator.get_attr('grid').A
+                    error: float = np.linalg.norm(A@stacked_y_vector)
+                    consistency_error.append(error)
 
-            consistency_figure = plt.figure(2)
-            plt.plot(consistency_error)
+                    x.append(i)
+
+            plt.subplot(1, 2, 2)
             plt.xlabel('round number')
             plt.title("Distance to Consistency")
-            consistency_figure.show()
+            plt.ylim([0, 0.125])
+            plt.plot(consistency_error)
 
-        # Print the final values to screen (stdout)
-        for bot in self.bot_dict.values():
-            print(bot.get_attr('atom').get_y(), "\n")
-
-        for _ in range(3):
-            print('-'*40)
-
-        if historical_trail:
+        if historical_trail in ['y', 'nu']:
             # Print the trail
-            for k in range(rounds+1):
-                bot_y_k = ()
-                for bot in self.bot_dict.values():
-                    bot_y_k += (bot.get_attr("historical_trail")[k],)
-                bot_y_k = np.vstack(bot_y_k)
-                
-                print('Round', k)
-                print(bot_y_k, "\n")
-                print('-'*50)
+            for k in range(self.rounds+1):
+                if k % de_granular == 0:
+                    bot_y_k = ()
+                    bot_nu_k = ()
+
+                    for bot in self.bot_dict.values():
+                        bot_y_k += (bot.get_attr("historical_trail_y")[k],)
+                        bot_nu_k += (bot.get_attr("historical_trail_nu")[k],)
+
+                    bot_y_k = np.vstack(bot_y_k)
+                    bot_nu_k = np.vstack(bot_nu_k)
+
+                    print('Round', k)
+
+                    if historical_trail == 'y':
+                        print(bot_y_k, "\n")
+                    elif historical_trail == 'nu':
+                        print(bot_nu_k, "\n")
+
+                    print('-'*50)
 
         plt.show()
         
